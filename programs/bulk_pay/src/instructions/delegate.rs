@@ -52,6 +52,8 @@ pub fn delegate(
         BulkTransferError::DelegationExpired
     );
 
+    require!(max_amount > 0, BulkTransferError::InvalidDelegationAmount);
+
     // Approve the scheduler PDA as delegate on sender's ATA
     approve(
         CpiContext::new(

@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::{Mint, TokenInterface};
 
 use crate::{
     errors::BulkTransferError,
@@ -11,8 +12,12 @@ pub struct CreateSchedule<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
 
+    // ✅ explicit mint account — used in delegation seeds AND stored in schedule
+    #[account(mint::token_program = token_program)]
+    pub token_mint: InterfaceAccount<'info, Mint>,
+
     #[account(
-        seeds  = [b"delegation", sender.key().as_ref(), schedule_account.mint.as_ref()],
+        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
         bump   = delegation_account.bump,
         constraint = delegation_account.owner     == sender.key()    @ BulkTransferError::Unauthorized,
         constraint = delegation_account.is_active == true             @ BulkTransferError::DelegationInactive,
@@ -30,6 +35,7 @@ pub struct CreateSchedule<'info> {
     pub schedule_account: Account<'info, ScheduleAccount>,
 
     pub system_program: Program<'info, System>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 pub fn create_schedule(
@@ -53,15 +59,25 @@ pub fn create_schedule(
         .try_fold(0u64, |acc, amt| acc.checked_add(amt))
         .ok_or(BulkTransferError::Overflow)?;
 
+    // ✅ check total lifetime exposure when max_runs is finite
+    let lifetime_total = if max_runs > 0 {
+        total
+            .checked_mul(max_runs as u64)
+            .ok_or(BulkTransferError::Overflow)?
+    } else {
+        total // infinite runs — just validate one run fits the cap
+    };
+
     require!(
-        total <= ctx.accounts.delegation_account.max_amount,
+        lifetime_total <= ctx.accounts.delegation_account.max_amount,
         BulkTransferError::ExceedsDelegationLimit
     );
 
     let s = &mut ctx.accounts.schedule_account;
     s.owner = ctx.accounts.sender.key();
-    s.mint = ctx.accounts.delegation_account.mint;
+    s.mint = ctx.accounts.token_mint.key();
     s.recurrence = recurrence;
+    s.created_at = clock.unix_timestamp;
     s.next_run_at = first_run_at;
     s.max_runs = max_runs;
     s.runs_completed = 0;

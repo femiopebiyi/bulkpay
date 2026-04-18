@@ -20,6 +20,8 @@ pub enum BulkTransferError {
     Unauthorized,
     #[msg("Recipient name exceeds maximum length")]
     NameTooLong,
+    #[msg("There is a mint mismatch, not the expected mint")]
+    InvalidMint,
 
     // ── Scheduler errors ─────────────────────────────────────────────────────
     #[msg("Delegation has been revoked or does not exist")]
@@ -38,4 +40,10 @@ pub enum BulkTransferError {
     InvalidSchedulerAuthority,
     #[msg("ATA does not exist — run the pre-ATA pass before executing a schedule")]
     AtaNotCreated,
+    #[msg("The amount provided is not a valid amount")]
+    InvalidDelegationAmount,
+    #[msg("This schedule is still active")]
+    ScheduleStillActive,
+    #[msg("This delegation is still active")]
+    DelegationStillActive,
 }

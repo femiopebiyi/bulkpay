@@ -26,7 +26,7 @@ pub struct ExecuteSchedule<'info> {
 
     #[account(
         mut,
-        seeds  = [b"schedule", sender.key().as_ref(), &schedule_account.next_run_at.to_le_bytes()],
+        seeds = [b"schedule", sender.key().as_ref(), &schedule_account.created_at.to_le_bytes()],
         bump   = schedule_account.bump,
         constraint = schedule_account.is_active
             @ BulkTransferError::ScheduleInactive,
@@ -39,13 +39,12 @@ pub struct ExecuteSchedule<'info> {
     pub schedule_account: Account<'info, ScheduleAccount>,
 
     #[account(
-        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
-        bump   = delegation_account.bump,
-        constraint = delegation_account.is_active
-            @ BulkTransferError::DelegationInactive,
-        constraint = delegation_account.expires_at > Clock::get()?.unix_timestamp
-            @ BulkTransferError::DelegationExpired,
-    )]
+    seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
+    bump   = delegation_account.bump,
+    constraint = delegation_account.is_active     @ BulkTransferError::DelegationInactive,
+    constraint = delegation_account.expires_at > Clock::get()?.unix_timestamp  @ BulkTransferError::DelegationExpired,
+    constraint = delegation_account.mint == schedule_account.mint    @ BulkTransferError::InvalidMint, // ✅ add this
+)]
     pub delegation_account: Account<'info, DelegationAccount>,
 
     #[account(
@@ -190,15 +189,21 @@ pub fn execute_schedule<'info>(
         // Final run — deactivate
         s.is_active = false;
     } else {
+        // ✅ handle deactivation explicitly after the match
         s.next_run_at = match s.recurrence {
-            Recurrence::Once => {
-                s.is_active = false;
-                s.next_run_at
-            }
+            Recurrence::Once => s.next_run_at, // no change — deactivated below
             Recurrence::Daily => s.next_run_at + 86_400,
             Recurrence::Weekly => s.next_run_at + 604_800,
-            Recurrence::Monthly => s.next_run_at + 2_592_000, // 30 days
+            Recurrence::Monthly => s.next_run_at + 2_592_000,
         };
+
+        // Deactivate if this was the final run
+        let is_final =
+            s.recurrence == Recurrence::Once || (s.max_runs > 0 && s.runs_completed >= s.max_runs);
+
+        if is_final {
+            s.is_active = false;
+        }
     }
 
     Ok(())
