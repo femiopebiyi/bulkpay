@@ -2,22 +2,40 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum BulkTransferError {
-    #[msg("remaining_accounts must be exactly 2 accounts per recipient (wallet + ata)")]
+    #[msg("remaining_accounts must be exactly 2 per recipient")]
     InvalidAccountCount,
-    #[msg("Wallet account does not match recipient address")]
+    #[msg("Wallet does not match recipient address")]
     InvalidRecipient,
-    #[msg("ATA does not match derived address for recipient + mint")]
+    #[msg("ATA does not match derived address")]
     InvalidAta,
-    #[msg("Integer Overflow!!!!")]
-    Overflow,
-    #[msg("Name of recipient is too long")]
-    NameTooLong,
-    #[msg("Sender balance not enough to cover entire transaction")]
-    InsufficientBalance,
-    #[msg("The ata provided is not writable")]
+    #[msg("ATA account is not writable")]
     AtaNotWritable,
-    #[msg("Unauthorized transaction(credential mismatch)")]
+    #[msg("Wallet account is executable — not a valid recipient")]
+    InvalidWallet,
+    #[msg("Sender has insufficient token balance")]
+    InsufficientBalance,
+    #[msg("Arithmetic overflow")]
+    Overflow,
+    #[msg("Unauthorized — signer does not own this account")]
     Unauthorized,
-    #[msg("This transfer log is invalid(probably doesn't belong to you")]
-    InvalidTransferLog,
+    #[msg("Recipient name exceeds maximum length")]
+    NameTooLong,
+
+    // ── Scheduler errors ─────────────────────────────────────────────────────
+    #[msg("Delegation has been revoked or does not exist")]
+    DelegationInactive,
+    #[msg("Delegation has expired")]
+    DelegationExpired,
+    #[msg("Transfer amount exceeds delegated maximum")]
+    ExceedsDelegationLimit,
+    #[msg("Schedule is not active")]
+    ScheduleInactive,
+    #[msg("Schedule is not due yet")]
+    ScheduleNotDue,
+    #[msg("Schedule has completed all runs")]
+    ScheduleExhausted,
+    #[msg("Scheduler authority does not match")]
+    InvalidSchedulerAuthority,
+    #[msg("ATA does not exist — run the pre-ATA pass before executing a schedule")]
+    AtaNotCreated,
 }

@@ -6,3 +6,6 @@ pub use recipient::*;
 
 pub mod transfer_record;
 pub use transfer_record::*;
+
+pub mod schedule_state;
+pub use schedule_state::*;

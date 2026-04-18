@@ -5,6 +5,7 @@ mod instructions;
 mod state;
 
 use crate::state::Recipient;
+use crate::state::{Recurrence, ScheduledRecipient};
 use instructions::*;
 
 declare_id!("Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT");
@@ -27,5 +28,35 @@ pub mod bulk_pay {
         recipients: Vec<Recipient>,
     ) -> Result<()> {
         instructions::bulk_transfer::bulk_transfer(ctx, recipients)
+    }
+
+    pub fn delegate(ctx: Context<Delegate>, max_amount: u64, expires_at: i64) -> Result<()> {
+        instructions::delegate::delegate(ctx, max_amount, expires_at)
+    }
+
+    pub fn revoke_delegation(ctx: Context<RevokeDelegation>) -> Result<()> {
+        instructions::revoke_delegation::revoke_delegation(ctx)
+    }
+
+    pub fn create_schedule(
+        ctx: Context<CreateSchedule>,
+        recipients: Vec<ScheduledRecipient>,
+        recurrence: Recurrence,
+        first_run_at: i64,
+        max_runs: u32,
+    ) -> Result<()> {
+        instructions::create_schedule::create_schedule(
+            ctx,
+            recipients,
+            recurrence,
+            first_run_at,
+            max_runs,
+        )
+    }
+
+    pub fn execute_schedule<'info>(
+        ctx: Context<'_, '_, '_, 'info, ExecuteSchedule<'info>>,
+    ) -> Result<()> {
+        instructions::execute_schedule::execute_schedule(ctx)
     }
 }
