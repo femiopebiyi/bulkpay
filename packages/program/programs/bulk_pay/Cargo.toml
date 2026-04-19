@@ -1,0 +1,26 @@
+[package]
+name        = "bulk_pay"
+version     = "0.1.0"
+description = "Created with Anchor"
+edition     = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name       = "bulk_pay"
+
+[features]
+default        = []
+cpi            = ["no-entrypoint"]
+no-entrypoint  = []
+no-idl         = []
+no-log-ix-name = []
+idl-build      = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+# ✅ inherit versions from workspace root — no version duplication
+anchor-lang = { workspace = true, features = ["idl-build"] }
+anchor-spl  = { workspace = true, features = ["idl-build"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "allow" }
+deprecated      = "allow"
