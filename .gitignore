@@ -1,0 +1,19 @@
+# Rust
+target/
+
+# Node
+node_modules/
+.next/
+dist/
+
+# Anchor
+test-ledger/
+.anchor/
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

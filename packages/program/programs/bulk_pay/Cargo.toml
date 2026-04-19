@@ -17,9 +17,10 @@ no-log-ix-name = []
 idl-build      = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-# ✅ inherit versions from workspace root — no version duplication
-anchor-lang = { workspace = true, features = ["idl-build"] }
-anchor-spl  = { workspace = true, features = ["idl-build"] }
+# ✅ features declared here — not inherited from workspace
+# idl-build only activates via the feature gate above, not by default
+anchor-lang = { workspace = true, features = ["init-if-needed"] }
+anchor-spl  = { workspace = true, features = ["token", "associated_token"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "allow" }

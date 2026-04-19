@@ -1,16 +1,14 @@
 [workspace]
 resolver = "2"
-members = [
-    "packages/program/programs/bulk_pay",
+members  = [
     "packages/backend",
 ]
 
+# Backend-only dependencies
 [workspace.dependencies]
-anchor-lang   = { version = "0.31.1", features = ["init-if-needed"] }
-anchor-spl    = { version = "0.31.1", features = ["token", "associated_token"] }
 solana-sdk    = { version = "2.1.0" }
 solana-client = { version = "2.1.0" }
-tokio         = { version = "1",  features = ["full"] }
+tokio         = { version = "1",   features = ["full"] }
 axum          = { version = "0.7" }
 sqlx          = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "macros"] }
 serde         = { version = "1",   features = ["derive"] }
