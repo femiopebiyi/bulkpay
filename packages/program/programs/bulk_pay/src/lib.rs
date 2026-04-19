@@ -44,7 +44,6 @@ pub mod bulk_pay {
         recurrence: Recurrence,
         first_run_at: i64,
         max_runs: u32,
-        created_at: i64,
     ) -> Result<()> {
         instructions::create_schedule::create_schedule(
             ctx,
@@ -52,7 +51,6 @@ pub mod bulk_pay {
             recurrence,
             first_run_at,
             max_runs,
-            created_at,
         )
     }
 
@@ -60,15 +58,5 @@ pub mod bulk_pay {
         ctx: Context<'_, '_, '_, 'info, ExecuteSchedule<'info>>,
     ) -> Result<()> {
         instructions::execute_schedule::execute_schedule(ctx)
-    }
-
-    // ✅ Previously missing — close an active or completed schedule
-    pub fn close_schedule(ctx: Context<CloseSchedule>) -> Result<()> {
-        instructions::close_schedule::close_schedule(ctx)
-    }
-
-    // ✅ Previously missing — close the delegation account after revoking
-    pub fn close_delegation(ctx: Context<CloseDelegation>) -> Result<()> {
-        instructions::close_delegation::close_delegation(ctx)
     }
 }

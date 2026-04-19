@@ -1,12 +1,15 @@
 // instructions/execute_schedule.rs
 
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token_interface::{transfer_checked, Mint, TokenAccount, TokenInterface, TransferChecked},
+};
 
 use crate::{
     errors::BulkTransferError,
     instructions::delegate::SCHEDULER_AUTHORITY_SEED,
-    state::{DelegationAccount, Recurrence, ScheduleAccount, TransferLog, TransferRecord, UserAccount},
+    state::{DelegationAccount, Recurrence, ScheduleAccount, TransferLog, TransferRecord},
 };
 
 #[derive(Accounts)]
@@ -23,9 +26,8 @@ pub struct ExecuteSchedule<'info> {
 
     #[account(
         mut,
-        // ✅ seeds use created_at — permanent, never changes unlike next_run_at
-        seeds      = [b"schedule", sender.key().as_ref(), &schedule_account.created_at.to_le_bytes()],
-        bump       = schedule_account.bump,
+        seeds = [b"schedule", sender.key().as_ref(), &schedule_account.created_at.to_le_bytes()],
+        bump   = schedule_account.bump,
         constraint = schedule_account.is_active
             @ BulkTransferError::ScheduleInactive,
         constraint = schedule_account.next_run_at <= Clock::get()?.unix_timestamp
@@ -37,16 +39,12 @@ pub struct ExecuteSchedule<'info> {
     pub schedule_account: Account<'info, ScheduleAccount>,
 
     #[account(
-        seeds      = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
-        bump       = delegation_account.bump,
-        constraint = delegation_account.is_active
-            @ BulkTransferError::DelegationInactive,
-        constraint = delegation_account.expires_at > Clock::get()?.unix_timestamp
-            @ BulkTransferError::DelegationExpired,
-        // ✅ cross-check: delegation must cover the same mint as the schedule
-        constraint = delegation_account.mint == schedule_account.mint
-            @ BulkTransferError::InvalidMint,
-    )]
+    seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
+    bump   = delegation_account.bump,
+    constraint = delegation_account.is_active     @ BulkTransferError::DelegationInactive,
+    constraint = delegation_account.expires_at > Clock::get()?.unix_timestamp  @ BulkTransferError::DelegationExpired,
+    constraint = delegation_account.mint == schedule_account.mint    @ BulkTransferError::InvalidMint, // ✅ add this
+)]
     pub delegation_account: Account<'info, DelegationAccount>,
 
     #[account(
@@ -59,9 +57,9 @@ pub struct ExecuteSchedule<'info> {
 
     #[account(
         mut,
-        seeds          = [b"transferlog", sender.key().as_ref()],
-        bump           = transfer_log.bump,
-        realloc        = TransferLog::space_needed(
+        seeds         = [b"transferlog", sender.key().as_ref()],
+        bump          = transfer_log.bump,
+        realloc       = TransferLog::space_needed(
             TransferLog::next_capacity(
                 transfer_log.records.len(),
                 schedule_account.recipients.len()
@@ -72,15 +70,6 @@ pub struct ExecuteSchedule<'info> {
     )]
     pub transfer_log: Account<'info, TransferLog>,
 
-    // ✅ Added — all_time_amount_sent must reflect scheduled transfers too
-    #[account(
-        mut,
-        seeds      = [b"useraccount", sender.key().as_ref()],
-        bump       = user_account.bump,
-        constraint = user_account.owner == sender.key() @ BulkTransferError::Unauthorized,
-    )]
-    pub user_account: Account<'info, UserAccount>,
-
     #[account(mint::token_program = token_program)]
     pub token_mint: InterfaceAccount<'info, Mint>,
 
@@ -88,11 +77,9 @@ pub struct ExecuteSchedule<'info> {
     #[account(seeds = [SCHEDULER_AUTHORITY_SEED], bump)]
     pub scheduler_authority: AccountInfo<'info>,
 
-    pub token_program:  Interface<'info, TokenInterface>,
-    // ✅ associated_token_program removed — no create_idempotent in this path,
-    //    pre-ATA pass is mandatory before calling execute_schedule
+    pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
-
     // remaining_accounts: [ata_0, ata_1, ...] — ATAs only.
     // Wallets come from schedule_account.recipients — no wallet AccountInfos needed.
     // Backend MUST run the pre-ATA pass before calling this instruction.
@@ -101,7 +88,7 @@ pub struct ExecuteSchedule<'info> {
 pub fn execute_schedule<'info>(
     ctx: Context<'_, '_, '_, 'info, ExecuteSchedule<'info>>,
 ) -> Result<()> {
-    let remaining  = ctx.remaining_accounts.to_vec();
+    let remaining = ctx.remaining_accounts.to_vec();
     let recipients = ctx.accounts.schedule_account.recipients.clone();
 
     // One ATA per recipient — wallets come from schedule_account, not remaining
@@ -110,11 +97,11 @@ pub fn execute_schedule<'info>(
         BulkTransferError::InvalidAccountCount
     );
 
-    let clock             = Clock::get()?;
-    let decimals          = ctx.accounts.token_mint.decimals;
+    let clock = Clock::get()?;
+    let decimals = ctx.accounts.token_mint.decimals;
     let token_program_key = ctx.accounts.token_program.key();
-    let mint_key          = ctx.accounts.token_mint.key();
-    let scheduler_bump    = ctx.bumps.scheduler_authority;
+    let mint_key = ctx.accounts.token_mint.key();
+    let scheduler_bump = ctx.bumps.scheduler_authority;
 
     // Pre-flight: verify sender can cover the full batch before any CPI fires
     let total: u64 = recipients
@@ -129,10 +116,10 @@ pub fn execute_schedule<'info>(
     );
 
     // Extract account infos before the loop — avoids borrow conflicts
-    let mint       = ctx.accounts.token_mint.to_account_info();
+    let mint = ctx.accounts.token_mint.to_account_info();
     let sender_ata = ctx.accounts.sender_ata.to_account_info();
     let token_prog = ctx.accounts.token_program.to_account_info();
-    let authority  = ctx.accounts.scheduler_authority.to_account_info();
+    let authority = ctx.accounts.scheduler_authority.to_account_info();
 
     let mut new_records: Vec<TransferRecord> = Vec::with_capacity(recipients.len());
 
@@ -148,7 +135,7 @@ pub fn execute_schedule<'info>(
             );
         require_keys_eq!(ata_info.key(), expected_ata, BulkTransferError::InvalidAta);
 
-        // ATA must already exist — backend pre-ATA pass is mandatory
+        // Option B: ATA must already exist — backend pre-ATA pass is mandatory
         require!(!ata_info.data_is_empty(), BulkTransferError::AtaNotCreated);
         require!(ata_info.is_writable, BulkTransferError::AtaNotWritable);
 
@@ -157,12 +144,12 @@ pub fn execute_schedule<'info>(
             CpiContext::new_with_signer(
                 token_prog.clone(),
                 TransferChecked {
-                    from:      sender_ata.clone(),
-                    mint:      mint.clone(),
-                    to:        ata_info.to_account_info(),
+                    from: sender_ata.clone(),
+                    mint: mint.clone(),
+                    to: ata_info.to_account_info(),
                     authority: authority.clone(),
                 },
-                // PDA signer seeds — program signs without a keypair
+                // PDA signer seeds — this is how the program signs without a keypair
                 &[&[SCHEDULER_AUTHORITY_SEED, &[scheduler_bump]]],
             ),
             recipient.amount,
@@ -182,21 +169,13 @@ pub fn execute_schedule<'info>(
             .ok_or(BulkTransferError::Overflow)?;
 
         new_records.push(TransferRecord {
-            address:                 recipient.wallet,
-            amount_received:         recipient.amount,
+            address: recipient.wallet,
+            amount_received: recipient.amount,
             total_all_time_received: previous_total
                 .checked_add(recipient.amount)
                 .ok_or(BulkTransferError::Overflow)?,
-            timestamp:               clock.unix_timestamp,
+            timestamp: clock.unix_timestamp,
         });
-
-        // ✅ Update sender's cumulative spend — mirrors what bulk_transfer does
-        ctx.accounts.user_account.all_time_amount_sent = ctx
-            .accounts
-            .user_account
-            .all_time_amount_sent
-            .checked_add(recipient.amount)
-            .ok_or(BulkTransferError::Overflow)?;
     }
 
     // All transfers succeeded — flush staged records atomically
@@ -206,20 +185,25 @@ pub fn execute_schedule<'info>(
     let s = &mut ctx.accounts.schedule_account;
     s.runs_completed += 1;
 
-    // ✅ Deactivation handled explicitly — not buried in a match arm
-    let is_final = s.recurrence == Recurrence::Once
-        || (s.max_runs > 0 && s.runs_completed >= s.max_runs);
-
-    if is_final {
+    if s.max_runs > 0 && s.runs_completed >= s.max_runs {
+        // Final run — deactivate
         s.is_active = false;
-        // next_run_at intentionally not updated — schedule is done
     } else {
+        // ✅ handle deactivation explicitly after the match
         s.next_run_at = match s.recurrence {
-            Recurrence::Once    => s.next_run_at, // unreachable — caught above
-            Recurrence::Daily   => s.next_run_at + 86_400,
-            Recurrence::Weekly  => s.next_run_at + 604_800,
-            Recurrence::Monthly => s.next_run_at + 2_592_000, // 30 days
+            Recurrence::Once => s.next_run_at, // no change — deactivated below
+            Recurrence::Daily => s.next_run_at + 86_400,
+            Recurrence::Weekly => s.next_run_at + 604_800,
+            Recurrence::Monthly => s.next_run_at + 2_592_000,
         };
+
+        // Deactivate if this was the final run
+        let is_final =
+            s.recurrence == Recurrence::Once || (s.max_runs > 0 && s.runs_completed >= s.max_runs);
+
+        if is_final {
+            s.is_active = false;
+        }
     }
 
     Ok(())

@@ -7,11 +7,12 @@ use crate::{
 };
 
 #[derive(Accounts)]
-#[instruction(recipients: Vec<ScheduledRecipient>, recurrence: Recurrence, first_run_at: i64, max_runs: u32, created_at: i64)]
+#[instruction(recipients: Vec<ScheduledRecipient>)]
 pub struct CreateSchedule<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
 
+    // ✅ explicit mint account — used in delegation seeds AND stored in schedule
     #[account(mint::token_program = token_program)]
     pub token_mint: InterfaceAccount<'info, Mint>,
 
@@ -28,51 +29,43 @@ pub struct CreateSchedule<'info> {
         init,
         payer  = sender,
         space  = ScheduleAccount::space_needed(recipients.len()),
-        // ✅ created_at comes from instruction args — no Clock::get()? in seeds
-        seeds  = [b"schedule", sender.key().as_ref(), &created_at.to_le_bytes()],
+        seeds  = [b"schedule", sender.key().as_ref(), &Clock::get()?.unix_timestamp.to_le_bytes()],
         bump
     )]
     pub schedule_account: Account<'info, ScheduleAccount>,
 
     pub system_program: Program<'info, System>,
-    pub token_program:  Interface<'info, TokenInterface>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 pub fn create_schedule(
     ctx: Context<CreateSchedule>,
-    recipients:   Vec<ScheduledRecipient>,
-    recurrence:   Recurrence,
+    recipients: Vec<ScheduledRecipient>,
+    recurrence: Recurrence,
     first_run_at: i64,
-    max_runs:     u32,
-    created_at:   i64,  // ✅ client passes this — used as the permanent PDA seed
+    max_runs: u32,
 ) -> Result<()> {
     let clock = Clock::get()?;
-
-    // Sanity-check: created_at must be within a reasonable window of the current slot
-    // Prevents seed squatting with far-future or far-past timestamps
-    require!(
-        created_at <= clock.unix_timestamp + 60
-            && created_at >= clock.unix_timestamp - 300,
-        BulkTransferError::InvalidCreatedAt
-    );
 
     require!(
         first_run_at > clock.unix_timestamp,
         BulkTransferError::ScheduleNotDue
     );
 
+    // Verify total fits within delegation cap
     let total: u64 = recipients
         .iter()
         .map(|r| r.amount)
         .try_fold(0u64, |acc, amt| acc.checked_add(amt))
         .ok_or(BulkTransferError::Overflow)?;
 
+    // ✅ check total lifetime exposure when max_runs is finite
     let lifetime_total = if max_runs > 0 {
         total
             .checked_mul(max_runs as u64)
             .ok_or(BulkTransferError::Overflow)?
     } else {
-        total
+        total // infinite runs — just validate one run fits the cap
     };
 
     require!(
@@ -81,16 +74,16 @@ pub fn create_schedule(
     );
 
     let s = &mut ctx.accounts.schedule_account;
-    s.owner          = ctx.accounts.sender.key();
-    s.mint           = ctx.accounts.token_mint.key();
-    s.recurrence     = recurrence;
-    s.created_at     = created_at;  // ✅ stored so execute_schedule can derive the same PDA
-    s.next_run_at    = first_run_at;
-    s.max_runs       = max_runs;
+    s.owner = ctx.accounts.sender.key();
+    s.mint = ctx.accounts.token_mint.key();
+    s.recurrence = recurrence;
+    s.created_at = clock.unix_timestamp;
+    s.next_run_at = first_run_at;
+    s.max_runs = max_runs;
     s.runs_completed = 0;
-    s.is_active      = true;
-    s.bump           = ctx.bumps.schedule_account;
-    s.recipients     = recipients;
+    s.is_active = true;
+    s.bump = ctx.bumps.schedule_account;
+    s.recipients = recipients;
 
     Ok(())
 }
