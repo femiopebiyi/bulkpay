@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_batches\n         SET status     = 'failed',\n             last_error = $1\n         WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19dc5fc069f2a6f363d9bdadd21f581ea146a12a37c6c6149b314d6aeabd9b6c"
+}

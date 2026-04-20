@@ -1,0 +1,68 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_batches\n         SET status = 'running'\n         WHERE id IN (\n             SELECT id FROM scheduled_batches\n             WHERE status      = 'pending'\n               AND scheduled_at <= now()\n             ORDER BY scheduled_at ASC\n             LIMIT 10\n             FOR UPDATE SKIP LOCKED\n         )\n         RETURNING id, sender_pubkey, schedule_pda, mint_address,\n                   recipients, recurrence, runs_completed, max_runs, retry_count",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "sender_pubkey",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "schedule_pda",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "mint_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "recipients",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "recurrence",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "runs_completed",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_runs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "retry_count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "76d00105d091fa3f9cc7d4dbedcd2bb9a76c48520c6f4386af0fcc7bc1bfd6ff"
+}

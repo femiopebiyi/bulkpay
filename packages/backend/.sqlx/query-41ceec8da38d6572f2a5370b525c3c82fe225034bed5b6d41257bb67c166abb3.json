@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduled_batches\n                                 (sender_pubkey, schedule_pda, mint_address,\n                                  recipients, recurrence, scheduled_at, max_runs, status)\n                             SELECT sender_pubkey, schedule_pda, mint_address,\n                                    recipients, recurrence, $1, max_runs, 'pending'\n                             FROM scheduled_batches\n                             WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41ceec8da38d6572f2a5370b525c3c82fe225034bed5b6d41257bb67c166abb3"
+}
