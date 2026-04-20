@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduled_batches\n             (sender_pubkey, schedule_pda, delegation_id, mint_address,\n              recipients, recurrence, scheduled_at, max_runs, status)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')\n         RETURNING id, schedule_pda, mint_address, recurrence,\n                   scheduled_at, status, runs_completed, max_runs,\n                   last_error, tx_signature, created_at, confirmed_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "schedule_pda",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "mint_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "recurrence",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "runs_completed",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "max_runs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "tx_signature",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "confirmed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Uuid",
+        "Varchar",
+        "Jsonb",
+        "Varchar",
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "dd2e9fbb77e6a10e31b0b22990e993e44513d0a996c213621b82e0425d295b4d"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM scheduler_delegations\n         WHERE sender_pubkey = $1\n           AND mint_address  = $2\n           AND is_active     = true\n           AND expires_at    > now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "591276c999b4f10c88316925abd56badf3062e1acad7b5310f71ddb0e1d0bb02"
+}

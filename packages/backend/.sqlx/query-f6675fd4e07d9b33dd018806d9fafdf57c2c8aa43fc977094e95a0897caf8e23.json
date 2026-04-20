@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT schedule_pda FROM scheduled_batches\n         WHERE id = $1 AND sender_pubkey = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "schedule_pda",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f6675fd4e07d9b33dd018806d9fafdf57c2c8aa43fc977094e95a0897caf8e23"
+}

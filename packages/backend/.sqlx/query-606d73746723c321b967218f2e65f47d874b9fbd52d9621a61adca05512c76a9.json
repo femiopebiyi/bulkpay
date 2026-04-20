@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE scheduled_batches\n         SET status = 'cancelled'\n         WHERE id            = $1\n           AND sender_pubkey = $2\n           AND status        = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "606d73746723c321b967218f2e65f47d874b9fbd52d9621a61adca05512c76a9"
+}
