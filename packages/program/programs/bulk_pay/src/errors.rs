@@ -48,4 +48,6 @@ pub enum BulkTransferError {
     DelegationStillActive,
     #[msg("created_at is outside acceptable window — must be within 5 minutes of current time")]
     InvalidCreatedAt,
+    #[msg("Batch exceeds maximum of 35 recipients per transaction")]
+    BatchTooLarge,
 }

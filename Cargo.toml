@@ -9,6 +9,7 @@ members = [
 # ── Anchor / Solana program ───────────────────────────────
 anchor-lang   = { version = "0.31.1", features = ["init-if-needed"] }
 anchor-spl    = { version = "0.31.1", features = ["token", "associated_token"] }
+spl-associated-token-account = { version = "6.0.0" }
 
 # ── Solana client (backend only) ─────────────────────────
 solana-sdk    = { version = "2.1.0" }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM contacts WHERE id = $1 AND owner_pubkey = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "096a5db41965317a30eaa765218767de49f5b622e7f0accaa34f1f92ac4ab782"
+}

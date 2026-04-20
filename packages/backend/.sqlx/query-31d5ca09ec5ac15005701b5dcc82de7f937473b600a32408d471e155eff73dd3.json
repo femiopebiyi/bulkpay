@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT wallet, nonce FROM nonces\n         WHERE nonce = $1\n           AND wallet = $2\n           AND expires_at > now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "wallet",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "nonce",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "31d5ca09ec5ac15005701b5dcc82de7f937473b600a32408d471e155eff73dd3"
+}

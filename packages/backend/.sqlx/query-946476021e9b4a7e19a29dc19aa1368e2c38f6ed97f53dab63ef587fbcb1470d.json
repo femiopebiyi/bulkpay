@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE batches\n         SET status       = 'confirmed',\n             tx_signature = $1,\n             confirmed_at = now()\n         WHERE id            = $2\n           AND sender_pubkey = $3\n           AND status        = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "946476021e9b4a7e19a29dc19aa1368e2c38f6ed97f53dab63ef587fbcb1470d"
+}

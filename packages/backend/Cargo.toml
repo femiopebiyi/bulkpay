@@ -24,3 +24,4 @@ tracing-subscriber  = { version = "0.3", features = ["env-filter"] }
 rand               = { workspace = true }
 bs58               = { workspace = true }
 hex                = { workspace = true }
+spl-associated-token-account = { workspace = true }
