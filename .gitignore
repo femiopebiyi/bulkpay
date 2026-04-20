@@ -17,3 +17,4 @@ test-ledger/
 # OS
 .DS_Store
 Thumbs.db
+executor-keypair.json
