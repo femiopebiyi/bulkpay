@@ -94,3 +94,30 @@ export async function getSolBalance(
 ): Promise<number> {
     return connection.getBalance(pubkey, "confirmed");
 }
+
+// helpers/setup.ts — add this utility
+// helpers/setup.ts
+
+export async function batchedPromiseAll<T>(
+    tasks: (() => Promise<T>)[],
+    concurrency?: number
+): Promise<T[]> {
+    const count = tasks.length;
+
+    // Small batches: run everything in parallel, no chunking overhead
+    if (count <= 10) {
+        return Promise.all(tasks.map((fn) => fn()));
+    }
+
+    // Large batches: throttle to stay under devnet rate limit
+    // Scale concurrency with size — more tasks = slightly more conservative
+    const limit = concurrency ?? (count <= 20 ? 10 : count <= 35 ? 8 : 5);
+
+    const results: T[] = [];
+    for (let i = 0; i < tasks.length; i += limit) {
+        const chunk = tasks.slice(i, i + limit);
+        const chunkResults = await Promise.all(chunk.map((fn) => fn()));
+        results.push(...chunkResults);
+    }
+    return results;
+}

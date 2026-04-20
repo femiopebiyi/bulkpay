@@ -5,6 +5,7 @@ import { useWallet } from "@/context/WalletContext";
 import { Page, BatchRecord } from "@/lib/types";
 import LoginScreen from "@/components/LoginScreen";
 import Navbar from "@/components/Navbar";
+import ToastContainer from "@/components/Toast";
 import Dashboard from "@/components/pages/Dashboard";
 import Send from "@/components/pages/Send";
 import History from "@/components/pages/History";
@@ -43,21 +44,17 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-bp-bg">
       <Navbar activePage={navPage} onNavigate={navigate} />
-      <main className="max-w-[1060px] mx-auto px-4 sm:px-6 py-5 sm:py-6">
-        {page === "dashboard" && (
-          <Dashboard onNavigate={navigate} onOpenBatch={openBatch} onNewSchedule={goToScheduleMode} />
-        )}
-        {page === "send" && (
-          <Send initialScheduleMode={scheduleMode} onResetScheduleMode={() => setScheduleMode(false)} />
-        )}
+      <main className="max-w-[1100px] mx-auto px-4 sm:px-6 py-5 sm:py-6">
+        {page === "dashboard" && <Dashboard onNavigate={navigate} onOpenBatch={openBatch} onNewSchedule={goToScheduleMode} />}
+        {page === "send" && <Send initialScheduleMode={scheduleMode} onResetScheduleMode={() => setScheduleMode(false)} />}
         {page === "history" && <History onOpenBatch={openBatch} />}
         {page === "schedules" && <Schedules onNewSchedule={goToScheduleMode} />}
         {page === "faucet" && <Faucet />}
         {page === "profile" && <Profile onBack={() => navigate(prevPage)} />}
-        {page === "batch-detail" && selectedBatch && (
-          <BatchDetail batch={selectedBatch} onBack={() => setPage(prevPage)} />
-        )}
+        {page === "batch-detail" && selectedBatch && <BatchDetail batch={selectedBatch} onBack={() => setPage(prevPage)} />}
       </main>
+      <ToastContainer />
     </div>
   );
 }
+

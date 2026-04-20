@@ -1,39 +1,39 @@
 @import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap");
-
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-
 body {
-  font-family: "DM Sans", sans-serif;
-  background: #fafaf9;
-  color: #0a0b0d;
+    font-family: "DM Sans", sans-serif;
+    background: #fafaf9;
+    color: #0a0b0d;
 }
 
 input:focus,
 select:focus {
-  outline: none;
-  border-color: #c8ff00;
-  box-shadow: 0 0 0 2px rgba(200, 255, 0, 0.12);
+    outline: none;
+    border-color: #c8ff00;
+    box-shadow: 0 0 0 2px rgba(200, 255, 0, 0.12);
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
+    width: 6px;
 }
+
 ::-webkit-scrollbar-track {
-  background: transparent;
+    background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+    background: #d1d5db;
+    border-radius: 3px;
 }
 
 .no-scrollbar::-webkit-scrollbar {
-  display: none;
+    display: none;
 }
+
 .no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }

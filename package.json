@@ -18,5 +18,11 @@
     "program:deploy": "cd packages/program && anchor deploy",
     "backend:dev": "cd packages/backend && cargo run",
     "frontend:dev": "cd packages/frontend && npm run dev"
+  },
+  "overrides": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "@types/react": "18.2.79",
+    "@types/react-dom": "18.2.25"
   }
 }

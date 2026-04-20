@@ -1,9 +1,8 @@
 "use client";
-
 import { useWallet } from "@/context/WalletContext";
 
 export default function LoginScreen() {
-  const { connect } = useWallet();
+  const { connect, connecting } = useWallet();
 
   return (
     <div className="min-h-screen bg-bp-bg flex items-center justify-center px-4">
@@ -19,11 +18,10 @@ export default function LoginScreen() {
         </p>
         <button
           onClick={connect}
-          className="bg-bp-dark text-bp-accent font-body font-medium text-sm
-                     px-8 py-3 rounded-lg hover:bg-bp-dark-btn-hover
-                     transition-all active:scale-[0.98] cursor-pointer"
+          disabled={connecting}
+          className="bg-bp-dark text-bp-accent font-body font-medium text-sm px-8 py-3 rounded-lg hover:bg-bp-dark-btn-hover transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Connect wallet
+          {connecting ? "Connecting..." : "Connect wallet"}
         </button>
         <p className="text-xs text-bp-hint mt-4">Devnet · Phantom, Backpack, Solflare</p>
       </div>
