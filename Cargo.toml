@@ -19,9 +19,7 @@ tokio         = { version = "1", features = ["full"] }
 axum          = { version = "0.7" }
 
 # ── Database ──────────────────────────────────────────────
-sqlx = { version = "0.8", features = [
-    "runtime-tokio", "postgres", "uuid", "chrono", "macros"
-] }
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "macros"] }
 
 # ── Serde ─────────────────────────────────────────────────
 serde      = { version = "1", features = ["derive"] }
@@ -38,6 +36,9 @@ anyhow    = { version = "1" }
 thiserror = { version = "2" }
 dotenvy   = { version = "0.15" }
 utoipa    = { version = "4", features = ["axum_extras"] }
+rand = { version = "0.8" }
+bs58 = { version = "0.5" }
+hex = { version = "0.4" }
 
 # ── Tracing ───────────────────────────────────────────────
 tracing            = { version = "0.1" }
