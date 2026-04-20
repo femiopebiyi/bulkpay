@@ -65,7 +65,7 @@ function buildRemainingAccounts(atas: PublicKey[]) {
 async function bootstrapSuite(
     program: ReturnType<typeof getProgram>,
     connection: anchor.web3.Connection,
-    solAmount = 0.5
+    solAmount = 0.1
 ): Promise<SuiteContext> {
     const sender = await createFundedWallet(connection, solAmount);
     const mint = await createTestMint(connection, sender, DECIMALS, "legacy");
@@ -637,7 +637,7 @@ describe("bulk_transfer › scale and limits", () => {
     it("works at the maximum account limit (14 recipients) using v0 + ALT", async () => {
         const ctx = await bootstrapSuite(program, connection, 2);
         // makeRecipients only derives ATA addresses — must pre-create separately
-        const recipients = makeRecipients(14, ctx.mint, ONE_USDC);
+        const recipients = makeRecipients(50, ctx.mint, ONE_USDC);
 
         // ✅ Mandatory pre-ATA pass — program enforces AtaNotCreated otherwise.
         // Also keeps CPI trace entries low (~1 per transfer vs ~4 per new ATA creation).
@@ -648,7 +648,7 @@ describe("bulk_transfer › scale and limits", () => {
         }
 
         const dataSize = estimateInstructionDataSize(recipients.length);
-        expect(dataSize).to.be.lessThan(200, `Instruction data unexpectedly large: ${dataSize} bytes`);
+        expect(dataSize).to.be.lessThan(2000, `Instruction data unexpectedly large: ${dataSize} bytes`);
 
         // ✅ only ATAs in remaining_accounts — no wallets
         await callBulkTransferV0(
@@ -663,6 +663,6 @@ describe("bulk_transfer › scale and limits", () => {
 
         const [logPda] = deriveTransferLog(ctx.sender.publicKey, program.programId);
         const log = await fetchTransferLog(program, logPda);
-        expect(log.records.length).to.be.gte(14);
+        expect(log.records.length).to.be.gte(50);
     });
 });

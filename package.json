@@ -6,12 +6,17 @@
     "packages/program"
   ],
   "scripts": {
-    "dev":              "yarn workspace @bulkpay/frontend dev",
-    "build:frontend":   "yarn workspace @bulkpay/frontend build",
-    "test:program":     "yarn workspace @bulkpay/program test",
+    "dev": "yarn workspace @bulkpay/frontend dev",
+    "build:frontend": "yarn workspace @bulkpay/frontend build",
+    "test:program": "yarn workspace @bulkpay/program test",
     "test:create-account": "yarn workspace @bulkpay/program test:create-account",
-    "test:init-log":       "yarn workspace @bulkpay/program test:init-log",
-    "test:bulk-suite":     "yarn workspace @bulkpay/program test:bulk-suite",
-    "generate:types":   "npx openapi-typescript http://localhost:3001/api/docs/openapi.json -o shared/types/generated/api.ts"
+    "test:init-log": "yarn workspace @bulkpay/program test:init-log",
+    "test:bulk-suite": "yarn workspace @bulkpay/program test:bulk-suite",
+    "generate:types": "npx openapi-typescript http://localhost:3001/api/docs/openapi.json -o shared/types/generated/api.ts",
+    "program:build": "cd packages/program && anchor build",
+    "program:test": "cd packages/program && anchor test --skip-local-validator",
+    "program:deploy": "cd packages/program && anchor deploy",
+    "backend:dev": "cd packages/backend && cargo run",
+    "frontend:dev": "cd packages/frontend && npm run dev"
   }
 }

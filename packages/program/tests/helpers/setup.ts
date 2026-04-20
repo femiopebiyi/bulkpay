@@ -81,7 +81,7 @@ export async function fundFromWallet(
  */
 export async function createFundedWallet(
     connection: Connection,
-    sol: number = 0.2  // keep low — transfers from your own wallet
+    sol: number = 0.1  // keep low — transfers from your own wallet
 ): Promise<Keypair> {
     const kp = Keypair.generate();
     await fundFromWallet(connection, kp.publicKey, sol);

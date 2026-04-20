@@ -7,12 +7,12 @@ use crate::{
 };
 
 #[derive(Accounts)]
-#[instruction(recipients: Vec<ScheduledRecipient>)]
+// ✅ added created_at to #[instruction] so it's available in seeds
+#[instruction(recipients: Vec<ScheduledRecipient>, recurrence: Recurrence, first_run_at: i64, max_runs: u32, created_at: i64)]
 pub struct CreateSchedule<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
 
-    // ✅ explicit mint account — used in delegation seeds AND stored in schedule
     #[account(mint::token_program = token_program)]
     pub token_mint: InterfaceAccount<'info, Mint>,
 
@@ -29,7 +29,8 @@ pub struct CreateSchedule<'info> {
         init,
         payer  = sender,
         space  = ScheduleAccount::space_needed(recipients.len()),
-        seeds  = [b"schedule", sender.key().as_ref(), &Clock::get()?.unix_timestamp.to_le_bytes()],
+        // ✅ created_at from instruction args — no Clock::get()? in seeds
+        seeds  = [b"schedule", sender.key().as_ref(), &created_at.to_le_bytes()],
         bump
     )]
     pub schedule_account: Account<'info, ScheduleAccount>,
@@ -44,28 +45,34 @@ pub fn create_schedule(
     recurrence: Recurrence,
     first_run_at: i64,
     max_runs: u32,
+    created_at: i64, // ✅ client passes this — used as permanent PDA seed
 ) -> Result<()> {
     let clock = Clock::get()?;
+
+    // Sanity check: created_at must be close to actual current time
+    // prevents seed squatting with arbitrary timestamps
+    require!(
+        created_at >= clock.unix_timestamp - 300 && created_at <= clock.unix_timestamp + 60,
+        BulkTransferError::InvalidCreatedAt
+    );
 
     require!(
         first_run_at > clock.unix_timestamp,
         BulkTransferError::ScheduleNotDue
     );
 
-    // Verify total fits within delegation cap
     let total: u64 = recipients
         .iter()
         .map(|r| r.amount)
         .try_fold(0u64, |acc, amt| acc.checked_add(amt))
         .ok_or(BulkTransferError::Overflow)?;
 
-    // ✅ check total lifetime exposure when max_runs is finite
     let lifetime_total = if max_runs > 0 {
         total
             .checked_mul(max_runs as u64)
             .ok_or(BulkTransferError::Overflow)?
     } else {
-        total // infinite runs — just validate one run fits the cap
+        total
     };
 
     require!(
@@ -77,7 +84,7 @@ pub fn create_schedule(
     s.owner = ctx.accounts.sender.key();
     s.mint = ctx.accounts.token_mint.key();
     s.recurrence = recurrence;
-    s.created_at = clock.unix_timestamp;
+    s.created_at = created_at; // ✅ store arg, not clock.unix_timestamp
     s.next_run_at = first_run_at;
     s.max_runs = max_runs;
     s.runs_completed = 0;

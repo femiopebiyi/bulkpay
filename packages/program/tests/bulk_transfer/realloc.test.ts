@@ -90,13 +90,13 @@ async function callBulkTransfer(
     return program.methods
         .bulkTransfer(recipients)
         .accountsPartial({
-            sender:         ctx.sender.publicKey,
-            userAccount:    userAccountPda,
-            tokenMint:      ctx.mint,
+            sender: ctx.sender.publicKey,
+            userAccount: userAccountPda,
+            tokenMint: ctx.mint,
             senderAtaToken: ctx.senderAta,
-            transferLog:    transferLogPda,
-            tokenProgram:   TOKEN_PROGRAM_ID,
-            systemProgram:  anchor.web3.SystemProgram.programId,
+            transferLog: transferLogPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: anchor.web3.SystemProgram.programId,
         })
         .remainingAccounts(buildRemainingAccounts(atas))
         .preInstructions([computeIx])
@@ -206,7 +206,7 @@ describe("bulk_transfer › realloc", () => {
 
         const accountInfo = await connection.getAccountInfo(logPda, "confirmed");
 
-        const exactSizeFor51  = spaceNeeded(51);
+        const exactSizeFor51 = spaceNeeded(51);
         const chunkSizeFor100 = spaceNeeded(100);
 
         // Must have grown to 100-record chunk boundary
@@ -234,9 +234,9 @@ describe("bulk_transfer › realloc", () => {
 
         // Snapshot the first and last records before realloc
         const { records: before } = await fetchTransferLog(program, logPda);
-        const firstAddressBefore  = before[0].address.toBase58();
-        const firstAmountBefore   = before[0].amountReceived.toNumber();
-        const lastAmountBefore    = before[49].amountReceived.toNumber();
+        const firstAddressBefore = before[0].address.toBase58();
+        const firstAmountBefore = before[0].amountReceived.toNumber();
+        const lastAmountBefore = before[49].amountReceived.toNumber();
 
         // Trigger realloc
         const { keypairs: [extra], atas: [extraAta] } =

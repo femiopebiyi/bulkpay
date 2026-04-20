@@ -11,12 +11,10 @@ import {
     fetchTransferLog,
 } from "./helpers/accounts";
 
-// Mirrors the Rust constants — keep in sync with state.rs
-const MAX_NAME_LEN = 32;
-const TRANSFER_RECORD_LEN = 4 + MAX_NAME_LEN + 32 + 8 + 8 + 8; // 92 bytes
-const BASE_LEN = 8 + 1 + 4;                                      // 13 bytes
+const TRANSFER_RECORD_LEN = 32 + 8 + 8 + 8;   // 56 bytes — v2, no name field
+const BASE_LEN = 8 + 1 + 4;                    // 13 bytes
 const INITIAL_CAPACITY = 50;
-const EXPECTED_INITIAL_SPACE = BASE_LEN + INITIAL_CAPACITY * TRANSFER_RECORD_LEN;
+const EXPECTED_INITIAL_SPACE = BASE_LEN + INITIAL_CAPACITY * TRANSFER_RECORD_LEN; // 2,813
 
 describe("init_transfer_log", () => {
     const program = getProgram();

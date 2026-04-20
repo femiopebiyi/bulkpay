@@ -46,4 +46,6 @@ pub enum BulkTransferError {
     ScheduleStillActive,
     #[msg("This delegation is still active")]
     DelegationStillActive,
+    #[msg("created_at is outside acceptable window — must be within 5 minutes of current time")]
+    InvalidCreatedAt,
 }

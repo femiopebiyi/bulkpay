@@ -50,7 +50,7 @@ const ONE_USDC = 1_000_000;
 async function bootstrapSuite(
     program: ReturnType<typeof getProgram>,
     connection: anchor.web3.Connection,
-    sol = 0.5
+    sol = 0.1
 ): Promise<SuiteContext> {
     const sender = await createFundedWallet(connection, sol);
     const mint = await createTestMint(connection, sender, DECIMALS, "legacy");
@@ -83,13 +83,13 @@ async function buildBulkTransferIx(
             program.methods
                 .bulkTransfer(recipients)
                 .accountsPartial({
-                    sender:         sender.publicKey,
-                    userAccount:    userAccountPda,
-                    tokenMint:      mint,
+                    sender: sender.publicKey,
+                    userAccount: userAccountPda,
+                    tokenMint: mint,
                     senderAtaToken: senderAta,
-                    transferLog:    transferLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: transferLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts(
                     atas.map((ata) => ({ pubkey: ata, isSigner: false, isWritable: true }))
@@ -131,13 +131,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         attacker.sender.publicKey,
-                    userAccount:    victimUserAccountPda, // ← wrong: victim's account
-                    tokenMint:      attacker.mint,
+                    sender: attacker.sender.publicKey,
+                    userAccount: victimUserAccountPda, // ← wrong: victim's account
+                    tokenMint: attacker.mint,
                     senderAtaToken: attacker.senderAta,
-                    transferLog:    attackerLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: attackerLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([{ pubkey: ata, isSigner: false, isWritable: true }])
                 .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 })])
@@ -176,13 +176,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         attacker.sender.publicKey,
-                    userAccount:    attackerUserPda,
-                    tokenMint:      attacker.mint,
+                    sender: attacker.sender.publicKey,
+                    userAccount: attackerUserPda,
+                    tokenMint: attacker.mint,
                     senderAtaToken: attacker.senderAta,
-                    transferLog:    victimLogPda, // ← wrong: victim's log
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: victimLogPda, // ← wrong: victim's log
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([{ pubkey: ata, isSigner: false, isWritable: true }])
                 .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 })])
@@ -221,13 +221,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         ctx.sender.publicKey,
-                    userAccount:    userAccountPda,
-                    tokenMint:      ctx.mint,
+                    sender: ctx.sender.publicKey,
+                    userAccount: userAccountPda,
+                    tokenMint: ctx.mint,
                     senderAtaToken: ctx.senderAta,
-                    transferLog:    transferLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: transferLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([{ pubkey: wrongMintAta, isSigner: false, isWritable: true }])
                 .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 })])
@@ -257,13 +257,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         ctx.sender.publicKey,
-                    userAccount:    userAccountPda,
-                    tokenMint:      ctx.mint,
+                    sender: ctx.sender.publicKey,
+                    userAccount: userAccountPda,
+                    tokenMint: ctx.mint,
                     senderAtaToken: ctx.senderAta,
-                    transferLog:    transferLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: transferLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([
                     { pubkey: ctx.mint, isSigner: false, isWritable: true } // mint ≠ ATA
@@ -292,13 +292,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         ctx.sender.publicKey,
-                    userAccount:    userAccountPda,
-                    tokenMint:      ctx.mint,
+                    sender: ctx.sender.publicKey,
+                    userAccount: userAccountPda,
+                    tokenMint: ctx.mint,
                     senderAtaToken: ctx.senderAta,
-                    transferLog:    transferLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: transferLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([
                     { pubkey: ata, isSigner: false, isWritable: false } // ← not writable
@@ -336,13 +336,13 @@ describe("bulk_transfer › security", () => {
             await program.methods
                 .bulkTransfer([{ amountToBeReceived: new anchor.BN(ONE_USDC) }])
                 .accountsPartial({
-                    sender:         legitUser.sender.publicKey, // claims to be legit user
-                    userAccount:    userAccountPda,
-                    tokenMint:      legitUser.mint,
+                    sender: legitUser.sender.publicKey, // claims to be legit user
+                    userAccount: userAccountPda,
+                    tokenMint: legitUser.mint,
                     senderAtaToken: legitUser.senderAta,
-                    transferLog:    transferLogPda,
-                    tokenProgram:   TOKEN_PROGRAM_ID,
-                    systemProgram:  anchor.web3.SystemProgram.programId,
+                    transferLog: transferLogPda,
+                    tokenProgram: TOKEN_PROGRAM_ID,
+                    systemProgram: anchor.web3.SystemProgram.programId,
                 })
                 .remainingAccounts([{ pubkey: ata, isSigner: false, isWritable: true }])
                 .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 })])
@@ -351,7 +351,7 @@ describe("bulk_transfer › security", () => {
 
             expect.fail("Should have rejected — signature mismatch");
         } catch (err: any) {
-            expect(err.message).to.include("Error");
+            expect(err.message).to.include("unknown");
         }
 
         // legit user's balance untouched

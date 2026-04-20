@@ -44,7 +44,7 @@ const ONE_USDC = 1_000_000;
 async function bootstrapSuite(
     program: ReturnType<typeof getProgram>,
     connection: anchor.web3.Connection,
-    sol = 0.5
+    sol = 0.2
 ): Promise<SuiteContext> {
     const sender = await createFundedWallet(connection, sol);
     const mint = await createTestMint(connection, sender, DECIMALS, "legacy");
