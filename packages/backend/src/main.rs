@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(routes::batches::router())
         .merge(routes::contacts::router())
         .merge(routes::schedules::router())
+        .merge(routes::users::router())
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");

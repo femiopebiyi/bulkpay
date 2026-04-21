@@ -23,7 +23,7 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
           { label: "Balance", value: balance.toLocaleString(), unit: "USDC" },
           { label: "All-time sent", value: profile.allTimeSent, unit: "USDC" },
           { label: "Active schedules", value: String(profile.activeSchedules), unit: "running" },
-          { label: "Contacts", value: "24", unit: "saved" },
+          { label: "Contacts", value: profile.totalRecipients, unit: "saved" },
         ].map((s) => (
           <div key={s.label} className="bg-bp-dark rounded-lg p-3 sm:p-3.5">
             <div className="text-[10px] text-bp-muted tracking-wide uppercase mb-1.5">{s.label}</div>

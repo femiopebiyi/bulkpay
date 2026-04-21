@@ -14,9 +14,9 @@ interface Props {
 
 let nextId = 4;
 
-const emptyRecipient = (): Recipient => ({
+const emptyRecipient = (): Recipient & { id: string } => ({
   id: String(nextId++), name: "", address: "", description: "", amount: "", ataStatus: "unknown",
-} as any);
+});
 
 export default function Send({ initialScheduleMode, onResetScheduleMode }: Props) {
   const { balance } = useWallet();
