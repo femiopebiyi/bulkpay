@@ -75,3 +75,21 @@ export async function searchContacts(query: string) {
     if (!res.ok) throw new Error("Failed to search contacts");
     return res.json();
 }
+
+// ── Batches ───────────────────────────────────────────────────────────────────
+
+export async function fetchBatches() {
+    const res = await fetch(`${BASE_URL}/batches`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch batches");
+    return res.json();
+}
+
+export async function fetchBatchDetail(id: string) {
+    const res = await fetch(`${BASE_URL}/batches/${id}`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch batch detail");
+    return res.json();
+}
