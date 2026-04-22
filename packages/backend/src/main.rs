@@ -3,6 +3,7 @@ use dotenvy::dotenv;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 
 mod auth;
 mod db;
@@ -16,7 +17,6 @@ pub struct AppState {
     pub jwt_secret: String,
 }
 
-// ✅ Allows AuthUser extractor to read jwt_secret from state
 impl AsRef<String> for AppState {
     fn as_ref(&self) -> &String {
         &self.jwt_secret
@@ -28,14 +28,11 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    let rpc_url = std::env::var("RPC_URL")
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let rpc_url      = std::env::var("RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .expect("JWT_SECRET must be set");
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "3001".to_string());
+    let jwt_secret   = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let port         = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string());
 
     let db = db::connect(&database_url).await?;
     tracing::info!("Database connected");
@@ -52,6 +49,12 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    // ✅ layer() BEFORE with_state() — required in Axum 0.7
     let app = Router::new()
         .route("/health", get(health))
         .merge(routes::auth::router())
@@ -59,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(routes::contacts::router())
         .merge(routes::schedules::router())
         .merge(routes::users::router())
+        .layer(cors)
         .with_state(state);
 
     let addr = format!("0.0.0.0:{port}");
