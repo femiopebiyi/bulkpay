@@ -22,7 +22,7 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
     onOpenBatch:   (b: BatchRecord) => void;
     onNewSchedule: () => void;
 }) {
-    const { profile, balance, authenticated } = useWallet();
+    const { profile, balance, authenticated, loadingProfile } = useWallet();
     const [batches,      setBatches]      = useState<BatchRecord[]>([]);
     const [loadingBatch, setLoadingBatch] = useState(false);
 
@@ -64,10 +64,10 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 mb-4">
                 {[
-                    { label: "Balance",          value: balance.toLocaleString(),          unit: "USDC"    },
-                    { label: "All-time sent",     value: profile.allTimeSent ?? "0",        unit: "USDC"    },
-                    { label: "Active schedules",  value: String(profile.activeSchedules ?? 0), unit: "running" },
-                    { label: "Total recipients",  value: String(profile.totalRecipients ?? 0), unit: "sent to" },
+                    { label: "Balance",          value: loadingProfile ? "..." : balance.toLocaleString(),          unit: "USDC"    },
+                    { label: "All-time sent",     value: loadingProfile ? "..." : (profile.allTimeSent ?? "0"),        unit: "USDC"    },
+                    { label: "Active schedules",  value: loadingProfile ? "..." : String(profile.activeSchedules ?? 0), unit: "running" },
+                    { label: "Total recipients",  value: loadingProfile ? "..." : String(profile.totalRecipients ?? 0), unit: "sent to" },
                 ].map((s) => (
                     <div key={s.label} className="bg-bp-dark rounded-lg p-3 sm:p-3.5">
                         <div className="text-[10px] text-bp-muted tracking-wide uppercase mb-1.5">

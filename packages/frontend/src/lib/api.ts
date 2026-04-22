@@ -50,7 +50,7 @@ export async function fetchUserProfile(wallet: string): Promise<UserProfile> {
 
     return {
         wallet: data.wallet,
-        name: data.display_name ?? "My Wallet",
+        name: data.display_name ?? "Stranger",
         allTimeSent: (data.all_time_sent / 1_000_000).toLocaleString(), // lamports → USDC
         totalBatches: data.total_batches,
         totalRecipients: data.total_recipients,

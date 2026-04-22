@@ -11,26 +11,26 @@ import { fetchNonce, verifySignature, fetchUserProfile } from "@/lib/api";
 import { fetchTokenBalance } from "@/lib/solana";
 
 interface WalletContextType {
-    connected:      boolean;
-    address:        string;
-    shortAddress:   string;
-    profile:        UserProfile;
-    balance:        number;
-    connecting:     boolean;
+    connected: boolean;
+    address: string;
+    shortAddress: string;
+    profile: UserProfile;
+    balance: number;
+    connecting: boolean;
     loadingProfile: boolean;
-    authenticated:  boolean;
-    connect:        () => void;
-    disconnect:     () => void;
-    updateName:     (name: string) => void;
+    authenticated: boolean;
+    connect: () => void;
+    disconnect: () => void;
+    updateName: (name: string) => void;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
 
 const emptyProfile = (wallet: string): UserProfile => ({
     wallet,
-    name:            "My Wallet",
-    allTimeSent:     "0",
-    totalBatches:    0,
+    name: "Stranger",
+    allTimeSent: "0",
+    totalBatches: 0,
     totalRecipients: 0,
     activeSchedules: 0,
 });
@@ -45,15 +45,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } = useAdapterWallet();
     const { setVisible } = useWalletModal();
 
-    const address      = publicKey?.toBase58() ?? "";
+    const address = publicKey?.toBase58() ?? "";
     const shortAddress = address
         ? `${address.slice(0, 4)}...${address.slice(-4)}`
         : "";
 
-    const [profile,        setProfile] = useState<UserProfile>(emptyProfile(""));
-    const [balance,        setBalance] = useState(0);
+    const [profile, setProfile] = useState<UserProfile>(emptyProfile(""));
+    const [balance, setBalance] = useState(0);
     const [loadingProfile, setLoading] = useState(false);
-    const [authenticated,  setAuthed]  = useState(false);
+    const [authenticated, setAuthed] = useState(false);
 
     // ── Step 1: Sign nonce → get JWT when wallet connects ─────────────────────
 
@@ -81,11 +81,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 const { message, nonce } = await fetchNonce(address);
 
                 // Sign with wallet — one popup to user
-                const encoded  = new TextEncoder().encode(message);
+                const encoded = new TextEncoder().encode(message);
                 const sigBytes = await signMessage!(encoded);
 
                 // Encode signature as base58
-                const bs58      = await import("bs58");
+                const bs58 = await import("bs58");
                 const signature = bs58.default.encode(sigBytes);
 
                 // Verify + get JWT
@@ -137,7 +137,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         return () => { cancelled = true; };
     }, [authenticated, address]);
 
-    const connect    = useCallback(() => setVisible(true), [setVisible]);
+    const connect = useCallback(() => setVisible(true), [setVisible]);
     const disconnect = useCallback(() => {
         adapterDisconnect();
         clearJwt();
