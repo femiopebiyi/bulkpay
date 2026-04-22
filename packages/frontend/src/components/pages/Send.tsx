@@ -172,16 +172,14 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                 <div key={b.index} className="flex items-center gap-3 text-xs">
                   <span className="text-bp-muted w-24">Batch {b.index + 1} ({b.recipients.length})</span>
                   <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-700 ${
-                      b.status === "confirmed" ? "bg-emerald-500 w-full"
+                    <div className={`h-full rounded-full transition-all duration-700 ${b.status === "confirmed" ? "bg-emerald-500 w-full"
                         : b.status === "submitted" ? "bg-bp-accent w-2/3"
                           : b.status === "failed" ? "bg-red-500 w-full"
                             : "bg-gray-300 w-0"
-                    }`} />
+                      }`} />
                   </div>
-                  <span className={`w-16 text-right font-mono ${
-                    b.status === "confirmed" ? "text-emerald-600" : b.status === "failed" ? "text-red-600" : "text-bp-muted"
-                  }`}>{b.status}</span>
+                  <span className={`w-16 text-right font-mono ${b.status === "confirmed" ? "text-emerald-600" : b.status === "failed" ? "text-red-600" : "text-bp-muted"
+                    }`}>{b.status}</span>
                 </div>
               ))}
             </div>

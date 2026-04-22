@@ -6,7 +6,7 @@ import {
 import { useWallet as useAdapterWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { UserProfile } from "@/lib/types";
-import { setJwt, clearJwt, getJwt } from "@/lib/auth";
+import { setJwt, clearJwt, getJwt, cacheProfileName, getCachedProfileName, clearCachedProfile } from "@/lib/auth";
 import { fetchNonce, verifySignature, fetchUserProfile } from "@/lib/api";
 import { fetchTokenBalance } from "@/lib/solana";
 
@@ -26,9 +26,9 @@ interface WalletContextType {
 
 const WalletContext = createContext<WalletContextType | null>(null);
 
-const emptyProfile = (wallet: string): UserProfile => ({
+const emptyProfile = (wallet: string, name = "My Wallet"): UserProfile => ({
     wallet,
-    name: "Stranger",
+    name,
     allTimeSent: "0",
     totalBatches: 0,
     totalRecipients: 0,
@@ -50,7 +50,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 4)}...${address.slice(-4)}`
         : "";
 
-    const [profile, setProfile] = useState<UserProfile>(emptyProfile(""));
+    const [profile, setProfile] = useState<UserProfile>(emptyProfile("", getCachedProfileName() ?? "My Wallet"));
     const [balance, setBalance] = useState(0);
     const [loadingProfile, setLoading] = useState(false);
     const [authenticated, setAuthed] = useState(false);
@@ -124,6 +124,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 if (!cancelled) {
                     setProfile(profileData);
                     setBalance(balanceData);
+                    cacheProfileName(profileData.name);
                 }
             } catch (err) {
                 console.error("Failed to load wallet data:", err);
@@ -141,13 +142,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     const disconnect = useCallback(() => {
         adapterDisconnect();
         clearJwt();
+        clearCachedProfile();
         setAuthed(false);
         setProfile(emptyProfile(""));
         setBalance(0);
     }, [adapterDisconnect]);
 
     const updateName = useCallback(
-        (name: string) => setProfile((p) => ({ ...p, name })),
+        (name: string) => { cacheProfileName(name); setProfile((p) => ({ ...p, name })); },
         [],
     );
 
