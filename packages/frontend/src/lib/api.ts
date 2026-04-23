@@ -93,3 +93,12 @@ export async function fetchBatchDetail(id: string) {
     if (!res.ok) throw new Error("Failed to fetch batch detail");
     return res.json();
 }
+// ── Schedules ─────────────────────────────────────────────────────────────────
+
+export async function fetchSchedules() {
+    const res = await fetch(`${BASE_URL}/schedules`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch schedules");
+    return res.json();
+}

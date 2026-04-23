@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { useToast } from "@/context/ToastContext";
 import { Recipient, BatchProgress } from "@/lib/types";
-import { mockContacts } from "@/lib/mockData";
+import { fetchContacts } from "@/lib/api";
+import { USDC_MINT } from "@/lib/solana";
 import { checkAtaExists, isValidSolanaAddress, truncateAddress } from "@/lib/solana";
 import { executeBatch, preflightCheck, MAX_RECIPIENTS_PER_TX } from "@/lib/batch";
 
@@ -25,11 +26,17 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
   const [mode, setMode] = useState<"now" | "schedule">(initialScheduleMode ? "schedule" : "now");
   const [batchTitle, setBatchTitle] = useState("");
   const [recipients, setRecipients] = useState<(Recipient & { id: string })[]>([
-    { id: "1", name: "Alice Johnson", address: "7xKXabc123456789dE9r", description: "March salary", amount: "100", ataStatus: "ready" },
-    { id: "2", name: "Bob Mensah", address: "3rFBxyz789012345nP2k", description: "Design contract", amount: "250", ataStatus: "ready" },
-    { id: "3", name: "", address: "", description: "", amount: "", ataStatus: "unknown" },
+    { id: "1", name: "", address: "", description: "", amount: "", ataStatus: "unknown" },
   ]);
   const [showContacts, setShowContacts] = useState<string | null>(null);
+  const [contacts, setContacts] = useState<Array<{ name: string; wallet_pubkey: string; ata_status?: string }>>([]);
+
+  // Load contacts from backend
+  useEffect(() => {
+    fetchContacts()
+      .then(setContacts)
+      .catch(() => { }); // fail silently — contacts are a convenience, not required
+  }, []);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [preflightErrors, setPreflightErrors] = useState<string[]>([]);
   const [preflightWarnings, setPreflightWarnings] = useState<string[]>([]);
@@ -68,7 +75,10 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
   const matchingContacts = (query: string) => {
     if (query.length < 2) return [];
     const q = query.toLowerCase();
-    return mockContacts.filter((c) => c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q));
+    return contacts.filter((c) =>
+      c.name.toLowerCase().includes(q) ||
+      c.wallet_pubkey.toLowerCase().includes(q)
+    );
   };
 
   // ─── State helpers ────────────────────────────────────────────────────────
@@ -87,9 +97,9 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
     setShowContacts(value.length >= 2 ? id : null);
   };
 
-  const pickContact = (id: string, contact: typeof mockContacts[0]) => {
+  const pickContact = (id: string, contact: { name: string; wallet_pubkey: string; ata_status?: string }) => {
     setRecipients((prev) => prev.map((r) => r.id === id
-      ? { ...r, name: contact.name, address: contact.address, ataStatus: contact.ataReady ? "ready" : "missing" }
+      ? { ...r, name: contact.name, address: contact.wallet_pubkey, ataStatus: contact.ata_status === "ready" ? "ready" : "missing" }
       : r
     ));
     setShowContacts(null);
@@ -111,14 +121,14 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
     setPreflightErrors([]);
     setPreflightWarnings([]);
 
-    const preflight = await preflightCheck(recipients, balance, "USDC_MOCK_MINT");
+    const preflight = await preflightCheck(recipients, balance, USDC_MINT.toBase58());
     setPreflightErrors(preflight.errors);
     setPreflightWarnings(preflight.warnings);
 
     if (!preflight.valid) return;
 
     // Start execution — show progress overlay
-    const progress = await executeBatch(recipients, "USDC_MOCK_MINT", (p) => setBatchProgress({ ...p }));
+    const progress = await executeBatch(recipients, USDC_MINT.toBase58(), (p) => setBatchProgress({ ...p }));
 
     if (progress.phase === "done") {
       addToast(`Batch "${batchTitle || "Untitled"}" confirmed — ${filled.length} recipients`, "success");
@@ -173,9 +183,9 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                   <span className="text-bp-muted w-24">Batch {b.index + 1} ({b.recipients.length})</span>
                   <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all duration-700 ${b.status === "confirmed" ? "bg-emerald-500 w-full"
-                        : b.status === "submitted" ? "bg-bp-accent w-2/3"
-                          : b.status === "failed" ? "bg-red-500 w-full"
-                            : "bg-gray-300 w-0"
+                      : b.status === "submitted" ? "bg-bp-accent w-2/3"
+                        : b.status === "failed" ? "bg-red-500 w-full"
+                          : "bg-gray-300 w-0"
                       }`} />
                   </div>
                   <span className={`w-16 text-right font-mono ${b.status === "confirmed" ? "text-emerald-600" : b.status === "failed" ? "text-red-600" : "text-bp-muted"
@@ -257,10 +267,10 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                     {showContacts === r.id && matchingContacts(r.name).length > 0 && (
                       <div className="absolute top-[30px] left-0 w-[220px] bg-white border border-gray-200 rounded-md z-20 overflow-hidden animate-fade-in">
                         {matchingContacts(r.name).map((c) => (
-                          <button key={c.address} onMouseDown={() => pickContact(r.id, c)}
+                          <button key={c.wallet_pubkey} onMouseDown={() => pickContact(r.id, c)}
                             className="w-full text-left px-2.5 py-2 hover:bg-gray-50 flex justify-between items-center cursor-pointer">
                             <span className="text-[12px] font-medium text-bp-dark">{c.name}</span>
-                            <span className="font-mono text-[10px] text-bp-hint">{truncateAddress(c.address)}</span>
+                            <span className="font-mono text-[10px] text-bp-hint">{truncateAddress(c.wallet_pubkey)}</span>
                           </button>
                         ))}
                       </div>
