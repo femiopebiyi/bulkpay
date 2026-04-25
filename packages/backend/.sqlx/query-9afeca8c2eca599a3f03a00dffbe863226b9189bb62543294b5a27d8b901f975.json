@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, wallet_pubkey, name, description, amount, ata_address\n         FROM batch_items\n         WHERE batch_id = $1\n         ORDER BY created_at ASC",
+  "query": "SELECT id, wallet_pubkey, name, description, amount, ata_address\n         FROM batch_items WHERE batch_id = $1 ORDER BY created_at ASC",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       true
     ]
   },
-  "hash": "e5dcaed8402ce24339cddef2e2a2563b9b4ef483aa499ba6230ac4dc1cf22528"
+  "hash": "9afeca8c2eca599a3f03a00dffbe863226b9189bb62543294b5a27d8b901f975"
 }

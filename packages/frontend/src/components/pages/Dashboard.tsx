@@ -6,27 +6,27 @@ import { fetchBatches } from "@/lib/api";
 
 const badge: Record<string, string> = {
     confirmed: "bg-emerald-100 text-emerald-800",
-    pending:   "bg-amber-100 text-amber-800",
+    pending: "bg-amber-100 text-amber-800",
     submitted: "bg-blue-100 text-blue-800",
-    failed:    "bg-red-100 text-red-800",
+    failed: "bg-red-100 text-red-800",
 };
 const label: Record<string, string> = {
     confirmed: "Confirmed",
-    pending:   "Pending",
+    pending: "Pending",
     submitted: "Submitted",
-    failed:    "Failed",
+    failed: "Failed",
 };
 
 export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
-    onNavigate:    (p: Page) => void;
-    onOpenBatch:   (b: BatchRecord) => void;
+    onNavigate: (p: Page) => void;
+    onOpenBatch: (b: BatchRecord) => void;
     onNewSchedule: () => void;
 }) {
     const { profile, balance, authenticated, loadingProfile } = useWallet();
-    const [batches,      setBatches]      = useState<BatchRecord[]>([]);
+    const [batches, setBatches] = useState<BatchRecord[]>([]);
     const [loadingBatch, setLoadingBatch] = useState(false);
 
-    const hour     = new Date().getHours();
+    const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
     // Fetch real batches once authenticated
@@ -38,16 +38,16 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
             .then((data) => {
                 // Map backend shape to frontend BatchRecord shape
                 const mapped: BatchRecord[] = data.map((b: any) => ({
-                    id:             b.id,
-                    title:          b.notes ?? "Batch transfer",
-                    date:           new Date(b.created_at).toLocaleDateString("en-GB", {
+                    id: b.id,
+                    title: b.notes ?? "Batch transfer",
+                    date: new Date(b.created_at).toLocaleDateString("en-GB", {
                         day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
                     }),
                     recipientCount: b.recipient_count,
-                    total:          (b.total_amount / 1_000_000).toLocaleString(),
-                    status:         b.status,
-                    txSignatures:   b.tx_signature ? [b.tx_signature] : [],
-                    recipients:     [],
+                    total: (b.total_amount / 1_000_000).toLocaleString(),
+                    status: b.status,
+                    txSignatures: b.tx_signature ? [b.tx_signature] : [],
+                    recipients: [],
                 }));
                 setBatches(mapped);
             })
@@ -64,10 +64,10 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5 mb-4">
                 {[
-                    { label: "Balance",          value: loadingProfile ? "..." : balance.toLocaleString(),          unit: "USDC"    },
-                    { label: "All-time sent",     value: loadingProfile ? "..." : (profile.allTimeSent ?? "0"),        unit: "USDC"    },
-                    { label: "Active schedules",  value: loadingProfile ? "..." : String(profile.activeSchedules ?? 0), unit: "running" },
-                    { label: "Total recipients",  value: loadingProfile ? "..." : String(profile.totalRecipients ?? 0), unit: "sent to" },
+                    { label: "Balance", value: loadingProfile ? "..." : balance.toLocaleString(), unit: "USDC" },
+                    { label: "All-time sent", value: loadingProfile ? "..." : (profile.allTimeSent ?? "0"), unit: "USDC" },
+                    { label: "Active schedules", value: loadingProfile ? "..." : String(profile.activeSchedules ?? 0), unit: "running" },
+                    { label: "Total recipients", value: loadingProfile ? "..." : String(profile.totalRecipients ?? 0), unit: "sent to" },
                 ].map((s) => (
                     <div key={s.label} className="bg-bp-dark rounded-lg p-3 sm:p-3.5">
                         <div className="text-[10px] text-bp-muted tracking-wide uppercase mb-1.5">
@@ -113,7 +113,7 @@ export default function Dashboard({ onNavigate, onOpenBatch, onNewSchedule }: {
                         No batches yet — send your first batch above
                     </div>
                 ) : (
-                    batches.map((b) => (
+                    batches.slice(0, 10).map((b) => (
                         <div
                             key={b.id}
                             onClick={() => onOpenBatch(b)}

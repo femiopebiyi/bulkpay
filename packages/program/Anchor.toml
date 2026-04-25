@@ -40,4 +40,4 @@ test-atomicity-invalid-mid-batch = "yarn run ts-mocha -p ./tsconfig.json -t 1000
 test-atomicity-invalid-no-increment = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts --grep 'does not increment all_time_amount_sent when'"
 
 
-test-security-tracking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts --grep 'works at the maximum batch size'"
+test-security-tracking = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts --grep 'stores the correct bump in'"

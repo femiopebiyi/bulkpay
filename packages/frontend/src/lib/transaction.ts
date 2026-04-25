@@ -11,6 +11,8 @@ import {
     AddressLookupTableProgram,
     AddressLookupTableAccount,
     ComputeBudgetProgram,
+    SystemProgram,
+    TransactionInstruction,
 } from "@solana/web3.js";
 import { Program, BN } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -23,9 +25,10 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface PreparedBatch {
-    batchId: string;
+    batch_id: string;        // was batchId
     atas: { wallet: string; ata_address: string; ata_exists: boolean }[];
-    totalAmount: number;
+    total_amount: number;        // was totalAmount
+    atas_created: number;        // new field — how many ATAs the backend created
 }
 
 export interface RecipientForTx {
@@ -61,42 +64,100 @@ export async function prepareBatch(
         throw new Error(`Prepare failed: ${err}`);
     }
 
-    return res.json();
+    return res.json(); // Rust returns snake_case — interface now matches
 }
 
 // ── Step 2: Create + populate an Address Lookup Table ─────────────────────────
 
 const ALT_CHUNK = 20; // max addresses per extend instruction
 
+// lib/transaction.ts
+
+// ── ALT cache helpers ─────────────────────────────────────────────────────────
+
+function getStoredAltAddress(wallet: string): string | null {
+    try { return localStorage.getItem(`bp_alt_${wallet}`); } catch { return null; }
+}
+
+function storeAltAddress(wallet: string, altAddress: string) {
+    try { localStorage.setItem(`bp_alt_${wallet}`, altAddress); } catch { }
+}
+
+// ── Create or reuse ALT ───────────────────────────────────────────────────────
+
 export async function createAndActivateALT(
     payer: PublicKey,
     signAndSend: (tx: VersionedTransaction) => Promise<string>,
     addresses: PublicKey[],
 ): Promise<AddressLookupTableAccount> {
-    const slot = await connection.getSlot("confirmed");
+    const walletKey = payer.toBase58();
+    const stored = getStoredAltAddress(walletKey);
 
-    // Create
-    const [createIx, altAddress] = AddressLookupTableProgram.createLookupTable({
-        authority: payer,
-        payer,
-        recentSlot: slot - 1,
-    });
+    let altAddress: PublicKey;
+    let existingAddresses: Set<string> = new Set();
 
-    const { blockhash: bh1, lastValidBlockHeight: lbh1 } =
-        await connection.getLatestBlockhash("confirmed");
+    if (stored) {
+        // ── Reuse existing ALT ────────────────────────────────────────────────
+        altAddress = new PublicKey(stored);
 
-    const createMsg = new TransactionMessage({
-        payerKey: payer,
-        recentBlockhash: bh1,
-        instructions: [createIx],
-    }).compileToV0Message();
+        const { value: existingAlt } = await connection.getAddressLookupTable(
+            altAddress, { commitment: "confirmed" }
+        );
 
-    const createTx = new VersionedTransaction(createMsg);
-    await signAndSend(createTx);
+        // Add this check after fetching the existing ALT
+        if (existingAlt!.state.addresses.length + addresses.length > 256) {
+            localStorage.removeItem(`bp_alt_${walletKey}`);
+            return createAndActivateALT(payer, signAndSend, addresses);
+        }
 
-    // Extend in chunks of 20
-    for (let i = 0; i < addresses.length; i += ALT_CHUNK) {
-        const chunk = addresses.slice(i, i + ALT_CHUNK);
+        if (!existingAlt) {
+            // Stored ALT no longer exists on-chain (deactivated/closed) — clear cache
+            localStorage.removeItem(`bp_alt_${walletKey}`);
+            return createAndActivateALT(payer, signAndSend, addresses);
+        }
+
+        existingAddresses = new Set(
+            existingAlt.state.addresses.map((a) => a.toBase58())
+        );
+    } else {
+        // ── Create a new ALT ──────────────────────────────────────────────────
+        const slot = await connection.getSlot("confirmed");
+
+        const [createIx, newAltAddress] = AddressLookupTableProgram.createLookupTable({
+            authority: payer,
+            payer,
+            recentSlot: slot - 1,
+        });
+
+        altAddress = newAltAddress;
+
+        const { blockhash, lastValidBlockHeight } =
+            await connection.getLatestBlockhash("confirmed");
+
+        const createTx = new VersionedTransaction(
+            new TransactionMessage({
+                payerKey: payer,
+                recentBlockhash: blockhash,
+                instructions: [createIx],
+            }).compileToV0Message()
+        );
+
+        const createSig = await signAndSend(createTx);
+        await connection.confirmTransaction(
+            { signature: createSig, blockhash, lastValidBlockHeight },
+            "confirmed"
+        );
+
+        storeAltAddress(walletKey, altAddress.toBase58());
+    }
+
+    // ── Extend with only addresses not already in the table ───────────────────
+    const newAddresses = addresses.filter(
+        (a) => !existingAddresses.has(a.toBase58())
+    );
+
+    for (let i = 0; i < newAddresses.length; i += ALT_CHUNK) {
+        const chunk = newAddresses.slice(i, i + ALT_CHUNK);
 
         const extendIx = AddressLookupTableProgram.extendLookupTable({
             lookupTable: altAddress,
@@ -108,27 +169,105 @@ export async function createAndActivateALT(
         const { blockhash, lastValidBlockHeight } =
             await connection.getLatestBlockhash("confirmed");
 
-        const extendMsg = new TransactionMessage({
-            payerKey: payer,
-            recentBlockhash: blockhash,
-            instructions: [extendIx],
-        }).compileToV0Message();
+        const extendTx = new VersionedTransaction(
+            new TransactionMessage({
+                payerKey: payer,
+                recentBlockhash: blockhash,
+                instructions: [extendIx],
+            }).compileToV0Message()
+        );
 
-        const extendTx = new VersionedTransaction(extendMsg);
-        await signAndSend(extendTx);
+        const extendSig = await signAndSend(extendTx);
+        await connection.confirmTransaction(
+            { signature: extendSig, blockhash, lastValidBlockHeight },
+            "confirmed"
+        );
     }
 
-    // Wait for ALT activation — mandatory 1 slot delay
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for ALT activation if anything was extended
+    if (newAddresses.length > 0) {
+        await new Promise((r) => setTimeout(r, 2000));
+    }
 
-    const { value: alt } = await connection.getAddressLookupTable(altAddress, {
-        commitment: "confirmed",
-    });
+    const { value: alt } = await connection.getAddressLookupTable(
+        altAddress, { commitment: "confirmed" }
+    );
     if (!alt) throw new Error("ALT not found after creation");
     return alt;
 }
 
+export async function ensureAccountsExist(
+    program: Program<BulkPay>,
+    sender: PublicKey,
+    signAndSend: (tx: VersionedTransaction) => Promise<string>,
+): Promise<void> {
+    const [userAccountPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("useraccount"), sender.toBuffer()],
+        program.programId,
+    );
+    const [transferLogPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("transferlog"), sender.toBuffer()],
+        program.programId,
+    );
+
+    const [userAccountInfo, transferLogInfo] = await Promise.all([
+        connection.getAccountInfo(userAccountPda),
+        connection.getAccountInfo(transferLogPda),
+    ]);
+
+    const needsUserAccount = userAccountInfo === null;
+    const needsTransferLog = transferLogInfo === null;
+
+    // ✅ Both already exist — skip entirely, no transaction needed
+    if (!needsUserAccount && !needsTransferLog) return;
+
+    const setupIxs: TransactionInstruction[] = [];
+
+    if (needsUserAccount) {
+        const ix = await program.methods
+            .createAccount()
+            .accountsPartial({ owner: sender })
+            .instruction();
+        setupIxs.push(ix);
+    }
+
+    if (needsTransferLog) {
+        const ix = await program.methods
+            .initTransferLog()
+            .accountsPartial({ sender })
+            .instruction();
+        setupIxs.push(ix);
+    }
+
+    const { blockhash, lastValidBlockHeight } =
+        await connection.getLatestBlockhash("confirmed");
+
+    // ✅ Use legacy transaction for setup — versioned tx can cause simulation
+    // failures for init instructions due to how Anchor resolves PDAs in v0 format
+    const setupTx = new VersionedTransaction(
+        new TransactionMessage({
+            payerKey: sender,
+            recentBlockhash: blockhash,
+            instructions: setupIxs,
+        }).compileToV0Message()
+    );
+
+    const sig = await signAndSend(setupTx);
+
+    // ✅ Wait for confirmation before proceeding — ALT creation needs a clean state
+    await connection.confirmTransaction(
+        { signature: sig, blockhash, lastValidBlockHeight },
+        "confirmed"
+    );
+}
 // ── Step 3: Build bulk_transfer versioned transaction ─────────────────────────
+
+// lib/transaction.ts — replace buildBulkTransferTx with this corrected version
+//
+// Key fix: cuLimit was using 10_000 per recipient but the program sets
+// BatchTooLarge at 35 recipients and the actual CU cost per recipient
+// is ~10,500 (existing ATAs) or ~32,500 (new ATAs, but backend handles those now).
+// Using 35_000 per recipient gives comfortable headroom.
 
 export async function buildBulkTransferTx(
     program: Program<BulkPay>,
@@ -149,22 +288,24 @@ export async function buildBulkTransferTx(
         USDC_MINT, sender, false, TOKEN_PROGRAM_ID
     );
 
-    // Amounts only — address comes from remaining_accounts (ATAs only, Option B)
+    // Option B: amounts only — wallet address is read on-chain from ATA bytes 32..64
     const recipientArgs = recipients.map((r) => ({
         amountToBeReceived: new BN(r.amount),
     }));
 
-    // remaining_accounts = ATAs only
+    // remaining_accounts = ATAs only (no wallets)
     const remainingAccounts = recipients.map((r) => ({
         pubkey: new PublicKey(r.ataAddress),
         isSigner: false,
         isWritable: true,
     }));
 
-    const cuLimit = Math.min(50_000 + recipients.length * 10_000, 1_400_000);
+    // 35,000 CU per recipient — matches program's actual cost with pre-created ATAs
+    // Cap at 1,400,000 hard ceiling
+    const cuLimit = Math.min(50_000 + recipients.length * 35_000, 1_400_000);
 
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: cuLimit });
-    const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1 });
+    const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 });
 
     const bulkIx = await program.methods
         .bulkTransfer(recipientArgs)
@@ -175,7 +316,7 @@ export async function buildBulkTransferTx(
             senderAtaToken: senderAta,
             transferLog: transferLogPda,
             tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: PublicKey.default,
+            systemProgram: SystemProgram.programId,
         })
         .remainingAccounts(remainingAccounts)
         .instruction();
@@ -190,7 +331,6 @@ export async function buildBulkTransferTx(
 
     return new VersionedTransaction(message);
 }
-
 // ── Step 4: Confirm batch with backend ────────────────────────────────────────
 
 export async function confirmBatch(
@@ -205,72 +345,4 @@ export async function confirmBatch(
     if (!res.ok) throw new Error("Failed to confirm batch with backend");
 }
 
-// ── Setup: ensure UserAccount + TransferLog exist before bulk_transfer ────────
-//
-// Called once before the first bulk_transfer. If either PDA is missing,
-// builds a setup transaction and has the user sign it once.
-// Subsequent sends skip this — PDAs persist on-chain forever.
 
-export async function ensureAccountsExist(
-    program:     Program<BulkPay>,
-    sender:      PublicKey,
-    signAndSend: (tx: VersionedTransaction) => Promise<string>,
-): Promise<void> {
-    const [userAccountPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("useraccount"), sender.toBuffer()],
-        program.programId,
-    );
-    const [transferLogPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("transferlog"), sender.toBuffer()],
-        program.programId,
-    );
-
-    // Check both in parallel — single RPC round trip
-    const [userAccountInfo, transferLogInfo] = await Promise.all([
-        connection.getAccountInfo(userAccountPda),
-        connection.getAccountInfo(transferLogPda),
-    ]);
-
-    const needsUserAccount  = userAccountInfo  === null;
-    const needsTransferLog  = transferLogInfo  === null;
-
-    // Both exist — nothing to do
-    if (!needsUserAccount && !needsTransferLog) return;
-
-    const setupIxs = [];
-
-    if (needsUserAccount) {
-        const ix = await program.methods
-            .createAccount()
-            .accountsPartial({ owner: sender })
-            .instruction();
-        setupIxs.push(ix);
-    }
-
-    if (needsTransferLog) {
-        const ix = await program.methods
-            .initTransferLog()
-            .accountsPartial({ sender })
-            .instruction();
-        setupIxs.push(ix);
-    }
-
-    // Bundle both into one transaction — user signs once
-    const { blockhash, lastValidBlockHeight } =
-        await connection.getLatestBlockhash("confirmed");
-
-    const message = new TransactionMessage({
-        payerKey:        sender,
-        recentBlockhash: blockhash,
-        instructions:    setupIxs,
-    }).compileToV0Message();
-
-    const setupTx = new VersionedTransaction(message);
-
-    // Sign and send — wait for confirmation before proceeding to bulk_transfer
-    const sig = await signAndSend(setupTx);
-    await connection.confirmTransaction(
-        { signature: sig, blockhash, lastValidBlockHeight },
-        "confirmed",
-    );
-}

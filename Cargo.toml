@@ -14,6 +14,7 @@ spl-associated-token-account = { version = "6.0.0" }
 # ── Solana client (backend only) ─────────────────────────
 solana-sdk    = { version = "2.1.0" }
 solana-client = { version = "2.1.0" }
+spl-token = {version = "4"}
 
 # ── Async / web ───────────────────────────────────────────
 tokio         = { version = "1", features = ["full"] }
@@ -40,6 +41,8 @@ utoipa    = { version = "4", features = ["axum_extras"] }
 rand = { version = "0.8" }
 bs58 = { version = "0.5" }
 hex = { version = "0.4" }
+
+
 
 # ── Tracing ───────────────────────────────────────────────
 tracing            = { version = "0.1" }

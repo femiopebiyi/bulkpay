@@ -1,164 +1,174 @@
 "use client";
 import {
     createContext, useContext, useCallback,
-    ReactNode, useState, useEffect,
+    useEffect, useState, ReactNode,
 } from "react";
 import { useWallet as useAdapterWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { UserProfile } from "@/lib/types";
-import { setJwt, clearJwt, getJwt, cacheProfileName, getCachedProfileName, clearCachedProfile } from "@/lib/auth";
-import { fetchNonce, verifySignature, fetchUserProfile } from "@/lib/api";
 import { fetchTokenBalance } from "@/lib/solana";
+import { fetchNonce, verifySignature, fetchUserProfile } from "@/lib/api";
+import { setJwt, clearJwt, getJwt } from "@/lib/auth";
 
 interface WalletContextType {
     connected: boolean;
+    authenticated: boolean;       // true after JWT obtained
+    connecting: boolean;
     address: string;
     shortAddress: string;
     profile: UserProfile;
     balance: number;
-    connecting: boolean;
     loadingProfile: boolean;
-    authenticated: boolean;
     connect: () => void;
     disconnect: () => void;
     updateName: (name: string) => void;
+    refreshBalance: () => Promise<void>;
+    refreshProfile: () => Promise<void>;
 }
 
-const WalletContext = createContext<WalletContextType | null>(null);
-
-const emptyProfile = (wallet: string, name = "My Wallet"): UserProfile => ({
-    wallet,
-    name,
+const DEFAULT_PROFILE: UserProfile = {
+    name: "Stranger",
+    wallet: "",
     allTimeSent: "0",
     totalBatches: 0,
     totalRecipients: 0,
     activeSchedules: 0,
-});
+};
+
+const WalletContext = createContext<WalletContextType | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
     const {
         connected,
-        publicKey,
-        disconnect: adapterDisconnect,
         connecting,
+        publicKey,
         signMessage,
+        disconnect: adapterDisconnect,
     } = useAdapterWallet();
     const { setVisible } = useWalletModal();
 
     const address = publicKey?.toBase58() ?? "";
-    const shortAddress = address
-        ? `${address.slice(0, 4)}...${address.slice(-4)}`
-        : "";
+    const shortAddress = address ? address.slice(0, 4) + "..." + address.slice(-4) : "";
 
-    const [profile, setProfile] = useState<UserProfile>(emptyProfile("", getCachedProfileName() ?? "My Wallet"));
+    const [authenticated, setAuthenticated] = useState(false);
+    const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
     const [balance, setBalance] = useState(0);
-    const [loadingProfile, setLoading] = useState(false);
-    const [authenticated, setAuthed] = useState(false);
+    const [loadingProfile, setLoadingProfile] = useState(false);
 
-    // ── Step 1: Sign nonce → get JWT when wallet connects ─────────────────────
-
+    // ── Auth flow — runs once when wallet connects ────────────────────────────
     useEffect(() => {
-        if (!connected || !address || !signMessage) {
-            clearJwt();
-            setAuthed(false);
-            setProfile(emptyProfile(""));
-            setBalance(0);
-            return;
-        }
+        if (!connected || !publicKey || !signMessage) return;
 
-        // Skip if already authenticated for this session
-        if (getJwt()) {
-            setAuthed(true);
-            return;
-        }
+        // If already have a JWT from a previous render cycle, skip re-auth
+        if (getJwt()) { setAuthenticated(true); return; }
 
         let cancelled = false;
 
-        async function authenticate() {
-            setLoading(true);
+        const authenticate = async () => {
             try {
-                // Get nonce from backend
+                // 1. Get nonce from backend
                 const { message, nonce } = await fetchNonce(address);
 
-                // Sign with wallet — one popup to user
-                const encoded = new TextEncoder().encode(message);
-                const sigBytes = await signMessage!(encoded);
+                // 2. Sign the message in the wallet (silent — no popup on reconnect)
+                const encodedMessage = new TextEncoder().encode(message);
+                const signatureBytes = await signMessage(encodedMessage);
 
-                // Encode signature as base58
+                if (cancelled) return;
+
+                // 3. Convert signature to base58 and verify with backend
                 const bs58 = await import("bs58");
-                const signature = bs58.default.encode(sigBytes);
+                const signatureB58 = bs58.default.encode(signatureBytes);
 
-                // Verify + get JWT
-                const { token } = await verifySignature(address, nonce, signature);
+                const { token } = await verifySignature(address, nonce, signatureB58);
+
+                if (cancelled) return;
+
                 setJwt(token);
-
-                if (!cancelled) setAuthed(true);
+                setAuthenticated(true);
             } catch (err) {
-                console.error("Authentication failed:", err);
-                if (!cancelled) {
-                    setLoading(false);
-                    setAuthed(false);
-                }
+                console.error("Auth failed:", err);
+                // Don't block the UI — user can retry by reconnecting
             }
+        };
+
+        // Near the top of authenticate()
+        if (!signMessage) {
+            console.warn("Wallet does not support signMessage — skipping auth");
+            return;
         }
 
         authenticate();
         return () => { cancelled = true; };
-    }, [connected, address, signMessage]);
+    }, [connected, publicKey, signMessage, address]);
 
-    // ── Step 2: Load profile + balance once JWT is ready ─────────────────────
-
+    // ── Fetch profile once authenticated ──────────────────────────────────────
     useEffect(() => {
         if (!authenticated || !address) return;
 
-        let cancelled = false;
-
-        async function loadData() {
-            try {
-                // Both fetch in parallel
-                const [profileData, balanceData] = await Promise.all([
-                    fetchUserProfile(address),
-                    fetchTokenBalance(address),
-                ]);
-
-                if (!cancelled) {
-                    setProfile(profileData);
-                    setBalance(balanceData);
-                    cacheProfileName(profileData.name);
-                }
-            } catch (err) {
-                console.error("Failed to load wallet data:", err);
-                if (!cancelled) setProfile(emptyProfile(address));
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        }
-
-        loadData();
-        return () => { cancelled = true; };
+        setLoadingProfile(true);
+        fetchUserProfile(address)
+            .then(setProfile)
+            .catch(console.error)
+            .finally(() => setLoadingProfile(false));
     }, [authenticated, address]);
 
+    // ── Fetch token balance once authenticated ────────────────────────────────
+    const refreshBalance = useCallback(async () => {
+        if (!address) { setBalance(0); return; }
+        try {
+            const bal = await fetchTokenBalance(address);
+            setBalance(bal);
+        } catch {
+            setBalance(0);
+        }
+    }, [address]);
+
+    // Add the function alongside refreshBalance
+    const refreshProfile = useCallback(async () => {
+        if (!address) return;
+        try {
+            const updated = await fetchUserProfile(address);
+            setProfile(updated);
+        } catch {
+            console.error("Failed to refresh profile");
+        }
+    }, [address]);
+
+    useEffect(() => {
+        if (!authenticated) return;
+        refreshBalance();
+    }, [authenticated, refreshBalance]);
+
+    // ── Connect / disconnect ──────────────────────────────────────────────────
     const connect = useCallback(() => setVisible(true), [setVisible]);
+
     const disconnect = useCallback(() => {
         adapterDisconnect();
         clearJwt();
-        clearCachedProfile();
-        setAuthed(false);
-        setProfile(emptyProfile(""));
+        setAuthenticated(false);
+        setProfile(DEFAULT_PROFILE);
         setBalance(0);
     }, [adapterDisconnect]);
 
-    const updateName = useCallback(
-        (name: string) => { cacheProfileName(name); setProfile((p) => ({ ...p, name })); },
-        [],
-    );
+    const updateName = useCallback((name: string) => {
+        setProfile((p) => ({ ...p, name }));
+    }, []);
 
     return (
         <WalletContext.Provider value={{
-            connected, address, shortAddress,
-            profile, balance, connecting,
-            loadingProfile, authenticated,
-            connect, disconnect, updateName,
+            connected,
+            authenticated,
+            connecting,
+            address,
+            shortAddress,
+            profile,
+            balance,
+            loadingProfile,
+            connect,
+            disconnect,
+            updateName,
+            refreshBalance,
+            refreshProfile,
         }}>
             {children}
         </WalletContext.Provider>
