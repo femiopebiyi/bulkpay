@@ -273,7 +273,7 @@ export async function buildBulkTransferTx(
     program: Program<BulkPay>,
     sender: PublicKey,
     recipients: RecipientForTx[],
-    alt: AddressLookupTableAccount,
+    alt: AddressLookupTableAccount | null,
 ): Promise<VersionedTransaction> {
     const [userAccountPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("useraccount"), sender.toBuffer()],
@@ -288,20 +288,16 @@ export async function buildBulkTransferTx(
         USDC_MINT, sender, false, TOKEN_PROGRAM_ID
     );
 
-    // Option B: amounts only — wallet address is read on-chain from ATA bytes 32..64
     const recipientArgs = recipients.map((r) => ({
         amountToBeReceived: new BN(r.amount),
     }));
 
-    // remaining_accounts = ATAs only (no wallets)
     const remainingAccounts = recipients.map((r) => ({
         pubkey: new PublicKey(r.ataAddress),
         isSigner: false,
         isWritable: true,
     }));
 
-    // 35,000 CU per recipient — matches program's actual cost with pre-created ATAs
-    // Cap at 1,400,000 hard ceiling
     const cuLimit = Math.min(50_000 + recipients.length * 35_000, 1_400_000);
 
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: cuLimit });
@@ -327,7 +323,7 @@ export async function buildBulkTransferTx(
         payerKey: sender,
         recentBlockhash: blockhash,
         instructions: [computeIx, priorityIx, bulkIx],
-    }).compileToV0Message([alt]);
+    }).compileToV0Message(alt ? [alt] : []);
 
     return new VersionedTransaction(message);
 }
@@ -346,3 +342,14 @@ export async function confirmBatch(
 }
 
 
+export async function failBatch(batchId: string): Promise<void> {
+    try {
+        await fetch(`${BASE}/batches/fail`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ batch_id: batchId }),
+        });
+    } catch {
+        // Best effort — don't throw, we're already in error handling
+    }
+}

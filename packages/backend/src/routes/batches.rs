@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/batches", post(prepare))
         .route("/batches/confirm", post(confirm))
         .route("/batches", get(list))
+        .route("/batches/fail", post(fail))
         .route("/batches/:id", get(detail))
 }
 
@@ -79,6 +80,11 @@ pub struct BatchSummary {
     pub notes: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub confirmed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Deserialize)]
+pub struct FailRequest {
+    pub batch_id: Uuid,
 }
 
 #[derive(Serialize)]
@@ -320,4 +326,24 @@ pub async fn detail(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(BatchDetail { batch, items }))
+}
+
+// ── POST fail /batches ─────────────────────────────────────────────────────────────
+
+pub async fn fail(
+    State(state): State<AppState>,
+    AuthUser(wallet): AuthUser,
+    Json(body): Json<FailRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    sqlx::query!(
+        "UPDATE batches SET status = 'failed'
+         WHERE id = $1 AND sender_pubkey = $2 AND status = 'pending'",
+        body.batch_id,
+        wallet,
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

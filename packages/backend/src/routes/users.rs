@@ -90,10 +90,11 @@ pub async fn get_user(
 
     // 5. Count total recipients across all batches
     let total_recipients = sqlx::query_scalar!(
-        "SELECT COALESCE(SUM(recipient_count), 0)
-         FROM batches
-         WHERE sender_pubkey = $1
-           AND status = 'confirmed'",
+        "SELECT COUNT(DISTINCT bi.wallet_pubkey)
+     FROM batch_items bi
+     JOIN batches b ON b.id = bi.batch_id
+     WHERE b.sender_pubkey = $1
+       AND b.status = 'confirmed'",
         wallet,
     )
     .fetch_one(&state.db)

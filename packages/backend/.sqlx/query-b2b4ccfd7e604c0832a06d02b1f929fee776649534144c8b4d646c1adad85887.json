@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(DISTINCT bi.wallet_pubkey)\n     FROM batch_items bi\n     JOIN batches b ON b.id = bi.batch_id\n     WHERE b.sender_pubkey = $1\n       AND b.status = 'confirmed'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b2b4ccfd7e604c0832a06d02b1f929fee776649534144c8b4d646c1adad85887"
+}

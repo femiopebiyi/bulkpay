@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE batches SET status = 'failed'\n         WHERE id = $1 AND sender_pubkey = $2 AND status = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30d39a6cf46ad2822dabde83dfecac66246df4f77cc9e22012960a4d9b092427"
+}

@@ -7,7 +7,10 @@ import { Recipient, BatchProgress } from "@/lib/types";
 import { fetchContacts } from "@/lib/api";
 import { USDC_MINT, connection, checkAtaExists, isValidSolanaAddress, truncateAddress } from "@/lib/solana";
 import { preflightCheck, MAX_RECIPIENTS_PER_TX } from "@/lib/batch";
-import { prepareBatch, createAndActivateALT, buildBulkTransferTx, confirmBatch, ensureAccountsExist, RecipientForTx } from "@/lib/transaction";
+import {
+  prepareBatch, createAndActivateALT, buildBulkTransferTx,
+  confirmBatch, failBatch, ensureAccountsExist, RecipientForTx,
+} from "@/lib/transaction";
 import { Program } from "@coral-xyz/anchor";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { BulkPay } from "../../../../../shared/types/bulk_pay";
@@ -26,7 +29,7 @@ const emptyRecipient = (): Recipient & { id: string } => ({
 });
 
 export default function Send({ initialScheduleMode, onResetScheduleMode }: Props) {
-  const { balance, address, refreshBalance, refreshProfile } = useWallet(); // add refreshBalance
+  const { balance, address, refreshBalance, refreshProfile, connect } = useWallet(); // add refreshBalance
   const { addToast } = useToast();
   const wallet = useAdapterWallet();
   const program = new Program<BulkPay>(idl as any, { connection } as any);
@@ -121,20 +124,28 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
       atasCreated: 0,
     });
 
+    let createdBatchId: string | null = null;
+
     try {
       const sender = new PublicKey(address);
 
+      if (!wallet.connected || !wallet.publicKey || !wallet.signTransaction || !wallet.signAllTransactions) {
+        addToast("Wallet disconnected — please reconnect and try again", "error");
+        connect();
+        setBatchProgress(null);
+        return;
+      }
+
       const signAndSend = async (tx: VersionedTransaction): Promise<string> => {
-        if (!wallet.signTransaction) throw new Error("Wallet does not support signing");
-        const signed = await wallet.signTransaction(tx);
+        const signed = await wallet.signTransaction!(tx);
         return connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
       };
 
-      // Step 1 — ensure UserAccount + TransferLog PDAs exist (user signs once if needed)
+      // Step 1 — ensure UserAccount + TransferLog PDAs exist
       setBatchProgress((p) => p ? { ...p, phase: "preparing" } : p);
       await ensureAccountsExist(program, sender, signAndSend);
 
-      // Step 2 — backend derives + creates all missing ATAs, returns ordered ATA list
+      // Step 2 — backend creates missing ATAs, returns ordered list
       setBatchProgress((p) => p ? { ...p, phase: "checking-atas" } : p);
       const prepared = await prepareBatch(
         filled.map((r) => ({
@@ -147,18 +158,22 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         batchTitle || undefined,
       );
 
+      createdBatchId = prepared.batch_id;
+
       setBatchProgress((p) => p ? {
         ...p,
         atasToCreate: prepared.atas_created,
         atasCreated: prepared.atas_created,
       } : p);
 
-      // Step 3 — build ALT with all ATA addresses
-      // ATAs only — wallet address is read on-chain from ATA bytes 32..64 (Option B)
+      // Step 3 — only create ALT when batch exceeds 25 recipients
+      const NEEDS_ALT = prepared.atas.length > 25;
       const altAddresses = prepared.atas.map((a) => new PublicKey(a.ata_address));
-      const alt = await createAndActivateALT(sender, signAndSend, altAddresses);
+      const alt = NEEDS_ALT
+        ? await createAndActivateALT(sender, signAndSend, altAddresses)
+        : null;
 
-      // Step 4 — split into sub-batches of MAX_RECIPIENTS_PER_TX
+      // Step 4 — split into sub-batches
       const CHUNK = MAX_RECIPIENTS_PER_TX;
       const recipientChunks: RecipientForTx[][] = [];
 
@@ -185,10 +200,9 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
       );
 
       // Step 6 — sign all at once (single wallet popup)
-      if (!wallet.signAllTransactions) throw new Error("Wallet does not support signAllTransactions");
       const signedTxs = await wallet.signAllTransactions(txs);
 
-      // Step 7 — submit all sub-batches in parallel
+      // Step 7 — submit all in parallel
       setBatchProgress((p) => p ? {
         ...p,
         phase: "submitting",
@@ -216,8 +230,9 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         )
       );
 
-      // Step 9 — notify backend, store tx signature
+      // Step 9 — notify backend
       await confirmBatch(prepared.batch_id, sigs[0]);
+      createdBatchId = null;
 
       setBatchProgress((p) => p ? {
         ...p,
@@ -229,10 +244,8 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         })),
       } : p);
 
-
-      // Step 10 — refresh everything after confirmation
+      // Step 10 — refresh dashboard data
       await Promise.all([refreshBalance(), refreshProfile()]);
-
 
       addToast(
         `Batch "${batchTitle || "Untitled"}" confirmed — ${filled.length} recipient${filled.length !== 1 ? "s" : ""}`,
@@ -244,7 +257,20 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
 
     } catch (err: any) {
       console.error("Batch failed:", err);
-      addToast(err?.message ?? "Batch failed — check console for details", "error");
+
+      if (createdBatchId) {
+        await failBatch(createdBatchId);
+      }
+
+      const msg = err?.message ?? "";
+      if (msg.includes("disconnected port") || msg.includes("service worker")) {
+        addToast("Phantom disconnected — please refresh the page and try again", "error");
+      } else if (msg.includes("User rejected") || msg.includes("cancelled")) {
+        addToast("Transaction cancelled", "error");
+      } else {
+        addToast(msg || "Batch failed — check console for details", "error");
+      }
+
       setBatchProgress(null);
     }
   };

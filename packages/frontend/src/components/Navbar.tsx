@@ -12,7 +12,7 @@ const NAV_ITEMS: { label: string; page: Page }[] = [
 ];
 
 export default function Navbar({ activePage, onNavigate }: { activePage: Page; onNavigate: (p: Page) => void }) {
-  const { shortAddress, disconnect } = useWallet();
+  const { shortAddress, disconnect, refreshProfile, refreshBalance } = useWallet();
   const [showPopup, setShowPopup] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -31,7 +31,12 @@ export default function Navbar({ activePage, onNavigate }: { activePage: Page; o
         </div>
         <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
           {NAV_ITEMS.map((item) => (
-            <button key={item.page} onClick={() => onNavigate(item.page)}
+            <button key={item.page} onClick={() => {
+              onNavigate(item.page);
+              refreshBalance();
+              refreshProfile();
+
+            }}
               className={`text-xs px-2 sm:px-2.5 py-1 rounded whitespace-nowrap transition-colors cursor-pointer flex-shrink-0
                 ${activePage === item.page ? "text-bp-accent" : "text-bp-muted hover:text-gray-300"}`}>
               {item.label}
