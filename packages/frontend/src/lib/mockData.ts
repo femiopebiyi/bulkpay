@@ -48,11 +48,11 @@ export const mockBatches: BatchRecord[] = [
   },
 ];
 
-export const mockSchedules: ScheduleRecord[] = [
-  { id: "s1", name: "Weekly stipends", recurrence: "Every 7 days", nextRun: "Apr 19", runsCompleted: 3, maxRuns: 5, status: "active" },
-  { id: "s2", name: "Monthly payroll", recurrence: "Every 30 days", nextRun: "May 01", runsCompleted: 1, maxRuns: 4, status: "active" },
-  { id: "s3", name: "Advisor retainer", recurrence: "Every 30 days", nextRun: "May 15", runsCompleted: 0, maxRuns: 0, status: "running" },
-];
+// export const mockSchedules: ScheduleRecord[] = [
+//   { id: "s1", name: "Weekly stipends", recurrence: "weekly", nextRun: "Apr 19", runsCompleted: 3, maxRuns: 5, status: "active" },
+//   { id: "s2", name: "Monthly payroll", recurrence: "monthly", nextRun: "May 01", runsCompleted: 1, maxRuns: 4, status: "active" },
+//   { id: "s3", name: "Advisor retainer", recurrence: "monthly", nextRun: "May 15", runsCompleted: 0, maxRuns: 0, status: "running" },
+// ];
 
 export const mockMints: MintRecord[] = [
   { wallet: "7xKX...dE9r", amount: "10,000 USDC", when: "2h ago" },

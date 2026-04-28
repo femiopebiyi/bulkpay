@@ -4,12 +4,13 @@ import { useWallet } from "@/context/WalletContext";
 import { useWallet as useAdapterWallet } from "@solana/wallet-adapter-react";
 import { useToast } from "@/context/ToastContext";
 import { Recipient, BatchProgress } from "@/lib/types";
-import { fetchContacts } from "@/lib/api";
+import { fetchContacts, fetchDelegationStatus, registerDelegate, createSchedule } from "@/lib/api";
 import { USDC_MINT, connection, checkAtaExists, isValidSolanaAddress, truncateAddress } from "@/lib/solana";
 import { preflightCheck, MAX_RECIPIENTS_PER_TX } from "@/lib/batch";
 import {
   prepareBatch, createAndActivateALT, buildBulkTransferTx,
-  confirmBatch, failBatch, ensureAccountsExist, RecipientForTx,
+  confirmBatch, failBatch, ensureAccountsExist, RecipientForTx, buildDelegateIx, buildCreateScheduleIx, submitSchedule,
+  ScheduleParams,
 } from "@/lib/transaction";
 import { Program } from "@coral-xyz/anchor";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
@@ -17,6 +18,7 @@ import { BulkPay } from "../../../../../shared/types/bulk_pay";
 import idl from "../../../../../shared/types/idl/bulk_pay.json";
 
 const PROGRAM_ID = new PublicKey("Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT");
+
 
 interface Props {
   initialScheduleMode: boolean;
@@ -106,6 +108,150 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
   const missingAtas = filled.filter((r) => r.ataStatus === "missing").length;
 
   // ─── Submit handler ───────────────────────────────────────────────────────
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("09:00");
+  const [scheduleRecurrence, setScheduleRecurrence] = useState<"once" | "daily" | "weekly" | "monthly">("once");
+  const [scheduleMaxRuns, setScheduleMaxRuns] = useState(0);
+
+
+  const handleScheduleSubmit = async () => {
+    setPreflightErrors([]);
+    setPreflightWarnings([]);
+
+    // Basic validation
+    if (filled.length === 0) {
+      setPreflightErrors(["Add at least one recipient"]);
+      return;
+    }
+    if (!scheduleDate) {
+      setPreflightErrors(["Select a first run date"]);
+      return;
+    }
+
+    const firstRunAt = new Date(`${scheduleDate}T${scheduleTime}:00Z`);
+    if (firstRunAt <= new Date()) {
+      setPreflightErrors(["First run date must be in the future"]);
+      return;
+    }
+
+    setBatchProgress({
+      totalRecipients: filled.length,
+      subBatches: [],
+      phase: "preparing",
+      atasToCreate: 0,
+      atasCreated: 0,
+    });
+
+    try {
+      const sender = new PublicKey(address);
+
+      if (!wallet.connected || !wallet.signTransaction) {
+        addToast("Wallet disconnected — please reconnect", "error");
+        connect();
+        setBatchProgress(null);
+        return;
+      }
+
+      const signAndSend = async (tx: VersionedTransaction): Promise<string> => {
+        const signed = await wallet.signTransaction!(tx);
+        return connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
+      };
+
+      // Step 1 — ensure UserAccount + TransferLog exist
+      await ensureAccountsExist(program, sender, signAndSend);
+
+      // Step 2 — check if delegation is active in DB
+      setBatchProgress((p) => p ? { ...p, phase: "checking-atas" } : p);
+      const delegation = await fetchDelegationStatus();
+
+      // Step 3 — derive delegation params from recipients
+      const totalPerRun = filled.reduce(
+        (sum, r) => sum + Math.round(parseFloat(r.amount) * 1_000_000), 0
+      );
+      const maxAmount = scheduleMaxRuns > 0
+        ? BigInt(totalPerRun) * BigInt(scheduleMaxRuns)
+        : BigInt(totalPerRun) * BigInt(120); // ~10 years of monthly runs as cap for infinite
+
+      // Expiry = last run date + 7 day buffer, or 1 year for infinite
+      const expiresAt = scheduleMaxRuns > 0
+        ? Math.floor(firstRunAt.getTime() / 1000) +
+        scheduleMaxRuns * intervalSeconds(scheduleRecurrence) + 604_800
+        : Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
+
+      const params: ScheduleParams = {
+        recipients: filled.map((r) => ({
+          wallet: r.address,
+          amount: Math.round(parseFloat(r.amount) * 1_000_000),
+          name: r.name || undefined,
+          description: r.description || undefined,
+        })),
+        recurrence: scheduleRecurrence,
+        firstRunAt,
+        maxRuns: scheduleMaxRuns,
+        notes: batchTitle || undefined,
+      };
+
+      // Step 4 — build + sign on-chain (delegate + create_schedule bundled if needed)
+      setBatchProgress((p) => p ? { ...p, phase: "signing" } : p);
+
+      const { schedulePda, createdAt } = await submitSchedule(
+        program,
+        sender,
+        params,
+        signAndSend,
+        delegation.active,
+        delegation.active ? undefined : { maxAmount, expiresAt },
+      );
+
+      // Step 5 — register delegation in DB if it was just created
+      if (!delegation.active) {
+        const [schedulerAuthority] = PublicKey.findProgramAddressSync(
+          [Buffer.from("scheduler_authority")],
+          program.programId,
+        );
+        await registerDelegate({
+          delegate_pda: schedulerAuthority.toBase58(),
+          mint_address: USDC_MINT.toBase58(),
+          max_amount: Number(maxAmount),
+          expires_at: new Date(expiresAt * 1000).toISOString(),
+        });
+      }
+
+      // Step 6 — register schedule in DB
+      await createSchedule({
+        schedule_pda: schedulePda,
+        created_at_seed: createdAt,
+        mint_address: USDC_MINT.toBase58(),
+        recipients: params.recipients,
+        recurrence: params.recurrence,
+        scheduled_at: firstRunAt.toISOString(),
+        max_runs: params.maxRuns,
+        notes: params.notes,
+      });
+
+      setBatchProgress((p) => p ? { ...p, phase: "done" } : p);
+
+      addToast(
+        `Schedule created — first run ${firstRunAt.toLocaleDateString()}`,
+        "success"
+      );
+
+      setBatchTitle("");
+      setRecipients([{ id: "1", name: "", address: "", description: "", amount: "", ataStatus: "unknown" }]);
+      setScheduleDate("");
+      setScheduleMaxRuns(0);
+
+    } catch (err: any) {
+      console.error("Schedule failed:", err);
+      addToast(err?.message ?? "Failed to create schedule", "error");
+      setBatchProgress(null);
+    }
+  };
+
+  // Helper — seconds per recurrence interval
+  function intervalSeconds(recurrence: string): number {
+    return { once: 0, daily: 86_400, weekly: 604_800, monthly: 2_592_000 }[recurrence] ?? 0;
+  }
 
   const handleSubmit = async () => {
     setPreflightErrors([]);
@@ -447,23 +593,47 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[11px] text-bp-muted block mb-1">First run date</label>
-                    <input type="date" min={minDate} className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark" />
+                    <input
+                      type="date"
+                      min={minDate}
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark"
+                    />
                   </div>
                   <div>
-                    <label className="text-[11px] text-bp-muted block mb-1">Execution time</label>
-                    <input type="time" className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark" />
+                    <label className="text-[11px] text-bp-muted block mb-1">Execution time (UTC)</label>
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[11px] text-bp-muted block mb-1">Recurrence</label>
-                    <select className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark">
-                      <option>Once (future-dated)</option><option>Daily</option><option>Weekly</option><option>Monthly</option>
+                    <select
+                      value={scheduleRecurrence}
+                      onChange={(e) => setScheduleRecurrence(e.target.value as any)}
+                      className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark"
+                    >
+                      <option value="once">Once (future-dated)</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
                     </select>
                   </div>
                   <div>
                     <label className="text-[11px] text-bp-muted block mb-1">Max runs (0 = unlimited)</label>
-                    <input type="number" defaultValue={0} min={0} className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-mono bg-white text-bp-dark" />
+                    <input
+                      type="number"
+                      min={0}
+                      value={scheduleMaxRuns}
+                      onChange={(e) => setScheduleMaxRuns(parseInt(e.target.value) || 0)}
+                      className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-mono bg-white text-bp-dark"
+                    />
                   </div>
                 </div>
               </div>
@@ -524,9 +694,13 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
             </div>
           )}
 
-          <button onClick={handleSubmit}
+          <button
+            onClick={mode === "now" ? handleSubmit : handleScheduleSubmit}
             className={`block w-full mt-3 py-2.5 text-center rounded-md text-[13px] font-medium cursor-pointer transition-all active:scale-[0.98]
-              ${mode === "now" ? "bg-[#111827] text-bp-accent hover:bg-bp-dark-btn-hover" : "bg-emerald-900 text-bp-accent hover:bg-emerald-800"}`}>
+        ${mode === "now"
+                ? "bg-[#111827] text-bp-accent hover:bg-bp-dark-btn-hover"
+                : "bg-emerald-900 text-bp-accent hover:bg-emerald-800"}`}
+          >
             {mode === "now" ? "Review & sign →" : "Create schedule →"}
           </button>
         </div>

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, schedule_pda, mint_address, recurrence,\n                scheduled_at, status, runs_completed, max_runs,\n                last_error, tx_signature, created_at, confirmed_at\n         FROM scheduled_batches\n         WHERE sender_pubkey = $1\n         ORDER BY created_at DESC\n         LIMIT 50",
+  "query": "SELECT DISTINCT ON (schedule_pda)\n        id, schedule_pda, mint_address, recurrence,\n        scheduled_at, status, max_runs, last_error,\n        tx_signature, created_at, confirmed_at,\n        (SELECT COALESCE(SUM(runs_completed), 0)\n         FROM scheduled_batches sb2\n         WHERE sb2.schedule_pda  = sb.schedule_pda\n           AND sb2.sender_pubkey = sb.sender_pubkey\n           AND sb2.status = 'confirmed'\n        )::int AS \"runs_completed!: i32\"\n FROM scheduled_batches sb\n WHERE sender_pubkey = $1\n   AND status != 'confirmed'\n ORDER BY schedule_pda, scheduled_at ASC",
   "describe": {
     "columns": [
       {
@@ -35,33 +35,33 @@
       },
       {
         "ordinal": 6,
-        "name": "runs_completed",
-        "type_info": "Int4"
-      },
-      {
-        "ordinal": 7,
         "name": "max_runs",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "last_error",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "tx_signature",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "confirmed_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "runs_completed!: i32",
+        "type_info": "Int4"
       }
     ],
     "parameters": {
@@ -77,12 +77,12 @@
       false,
       false,
       false,
-      false,
       true,
       true,
       false,
-      true
+      true,
+      null
     ]
   },
-  "hash": "6ea882cca86b213dfc9792272fafe2275e000d10370c7fe9346eb4d8deeac127"
+  "hash": "08893c28fbbf67b1931bb2cf53e6ba6f66d4c23a2ad093e68e0afd3c9f405178"
 }

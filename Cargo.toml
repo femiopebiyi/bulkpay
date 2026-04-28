@@ -41,7 +41,7 @@ utoipa    = { version = "4", features = ["axum_extras"] }
 rand = { version = "0.8" }
 bs58 = { version = "0.5" }
 hex = { version = "0.4" }
-
+sha2 = { version = "0.10" }
 
 
 # ── Tracing ───────────────────────────────────────────────

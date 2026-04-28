@@ -1,5 +1,5 @@
 import { authHeaders, getJwt } from "./auth";
-import { UserProfile } from "./types";
+import { UserProfile, ScheduleRecord } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -100,5 +100,51 @@ export async function fetchSchedules() {
         headers: authHeaders(),
     });
     if (!res.ok) throw new Error("Failed to fetch schedules");
+    return res.json();
+}
+
+
+export async function fetchDelegationStatus(): Promise<{
+    active: boolean;
+    expires_at: string | null;
+    max_amount: number | null;
+}> {
+    const res = await fetch(`${BASE_URL}/delegate`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch delegation status");
+    return res.json();
+}
+
+export async function registerDelegate(body: {
+    delegate_pda: string;
+    mint_address: string;
+    max_amount: number;
+    expires_at: string;
+}): Promise<void> {
+    const res = await fetch(`${BASE_URL}/delegate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Failed to register delegation");
+}
+
+export async function createSchedule(body: {
+    schedule_pda: string;
+    created_at_seed: number;
+    mint_address: string;
+    recipients: { wallet: string; amount: number; name?: string; description?: string }[];
+    recurrence: string;
+    scheduled_at: string;
+    max_runs: number;
+    notes?: string;
+}): Promise<ScheduleRecord> {
+    const res = await fetch(`${BASE_URL}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Failed to create schedule");
     return res.json();
 }

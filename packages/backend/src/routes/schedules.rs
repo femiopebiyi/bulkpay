@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::get,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -11,48 +11,71 @@ use crate::{auth::AuthUser, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/schedules",             get(list).post(create))
-        .route("/schedules/:id",         get(detail).delete(cancel))
+        .route("/schedules", get(list).post(create))
+        .route("/schedules/:id", get(detail).delete(cancel))
         .route("/schedules/:id/history", get(history))
-        .route("/delegate/instruction",  get(delegate_instruction))
-        .route("/delegate",              delete(revoke_delegate))
+        .route("/delegate/instruction", get(delegate_instruction))
+        .route(
+            "/delegate",
+            get(check_delegate)
+                .post(register_delegate)
+                .delete(revoke_delegate),
+        )
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// ── POST /delegate — register delegation after user signs on-chain ────────────
+
+#[derive(Serialize)]
+pub struct DelegationStatus {
+    pub active: bool,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub max_amount: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct RegisterDelegateRequest {
+    pub delegate_pda: String, // scheduler_authority PDA address
+    pub mint_address: String,
+    pub max_amount: i64, // in base units
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Deserialize)]
 pub struct CreateScheduleRequest {
     pub schedule_pda: String,
+    pub created_at_seed: i64,
     pub mint_address: String,
-    pub recipients:   Vec<ScheduledRecipientInput>,
-    pub recurrence:   String, // "once" | "daily" | "weekly" | "monthly"
+    pub recipients: Vec<ScheduledRecipientInput>,
+    pub recurrence: String, // "once" | "daily" | "weekly" | "monthly"
     pub scheduled_at: chrono::DateTime<chrono::Utc>,
-    pub max_runs:     i32,    // 0 = infinite, mirrors on-chain ScheduleAccount
-    pub notes:        Option<String>,
+    pub max_runs: i32, // 0 = infinite, mirrors on-chain ScheduleAccount
+    pub notes: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct ScheduledRecipientInput {
-    pub wallet:      String,
-    pub amount:      i64,
-    pub name:        Option<String>,
+    pub wallet: String,
+    pub amount: i64,
+    pub name: Option<String>,
     pub description: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct ScheduleSummary {
-    pub id:             Uuid,
-    pub schedule_pda:   String,
-    pub mint_address:   String,
-    pub recurrence:     String,
-    pub scheduled_at:   chrono::DateTime<chrono::Utc>,
-    pub status:         String,
+    pub id: Uuid,
+    pub schedule_pda: String,
+    pub mint_address: String,
+    pub recurrence: String,
+    pub scheduled_at: chrono::DateTime<chrono::Utc>,
+    pub status: String,
     pub runs_completed: i32,
-    pub max_runs:       i32,
-    pub last_error:     Option<String>,
-    pub tx_signature:   Option<String>,
-    pub created_at:     chrono::DateTime<chrono::Utc>,
-    pub confirmed_at:   Option<chrono::DateTime<chrono::Utc>>,
+    pub max_runs: i32,
+    pub last_error: Option<String>,
+    pub tx_signature: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub confirmed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Serialize)]
@@ -62,19 +85,86 @@ pub struct DelegateInstructionResponse {
 
 // ── GET /schedules ────────────────────────────────────────────────────────────
 
+pub async fn check_delegate(
+    State(state): State<AppState>,
+    AuthUser(wallet): AuthUser,
+) -> Result<Json<DelegationStatus>, (StatusCode, String)> {
+    let row = sqlx::query!(
+        "SELECT max_amount, expires_at FROM scheduler_delegations
+         WHERE sender_pubkey = $1
+           AND is_active     = true
+           AND expires_at    > now()
+         ORDER BY created_at DESC
+         LIMIT 1",
+        wallet,
+    )
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(match row {
+        Some(r) => DelegationStatus {
+            active: true,
+            expires_at: Some(r.expires_at),
+            max_amount: Some(r.max_amount),
+        },
+        None => DelegationStatus {
+            active: false,
+            expires_at: None,
+            max_amount: None,
+        },
+    }))
+}
+
+pub async fn register_delegate(
+    State(state): State<AppState>,
+    AuthUser(wallet): AuthUser,
+    Json(body): Json<RegisterDelegateRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    sqlx::query!(
+        "INSERT INTO scheduler_delegations
+             (sender_pubkey, delegate_pda, mint_address, max_amount, expires_at, is_active)
+         VALUES ($1, $2, $3, $4, $5, true)
+         ON CONFLICT (sender_pubkey, mint_address)
+         DO UPDATE SET
+             delegate_pda = EXCLUDED.delegate_pda,
+             max_amount   = EXCLUDED.max_amount,
+             expires_at   = EXCLUDED.expires_at,
+             is_active    = true,
+             revoked_at   = NULL",
+        wallet,
+        body.delegate_pda,
+        body.mint_address,
+        body.max_amount,
+        body.expires_at,
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn list(
     State(state): State<AppState>,
     AuthUser(wallet): AuthUser,
 ) -> Result<Json<Vec<ScheduleSummary>>, (StatusCode, String)> {
     let rows = sqlx::query_as!(
         ScheduleSummary,
-        "SELECT id, schedule_pda, mint_address, recurrence,
-                scheduled_at, status, runs_completed, max_runs,
-                last_error, tx_signature, created_at, confirmed_at
-         FROM scheduled_batches
-         WHERE sender_pubkey = $1
-         ORDER BY created_at DESC
-         LIMIT 50",
+        "SELECT DISTINCT ON (schedule_pda)
+        id, schedule_pda, mint_address, recurrence,
+        scheduled_at, status, max_runs, last_error,
+        tx_signature, created_at, confirmed_at,
+        (SELECT COALESCE(SUM(runs_completed), 0)
+         FROM scheduled_batches sb2
+         WHERE sb2.schedule_pda  = sb.schedule_pda
+           AND sb2.sender_pubkey = sb.sender_pubkey
+           AND sb2.status = 'confirmed'
+        )::int AS \"runs_completed!: i32\"
+ FROM scheduled_batches sb
+ WHERE sender_pubkey = $1
+   AND status != 'confirmed'
+ ORDER BY schedule_pda, scheduled_at ASC",
         wallet,
     )
     .fetch_all(&state.db)
@@ -124,20 +214,21 @@ pub async fn create(
     let row = sqlx::query_as!(
         ScheduleSummary,
         "INSERT INTO scheduled_batches
-             (sender_pubkey, schedule_pda, delegation_id, mint_address,
-              recipients, recurrence, scheduled_at, max_runs, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-         RETURNING id, schedule_pda, mint_address, recurrence,
-                   scheduled_at, status, runs_completed, max_runs,
-                   last_error, tx_signature, created_at, confirmed_at",
+         (sender_pubkey, schedule_pda, created_at_seed, delegation_id, mint_address,
+          recipients, recurrence, scheduled_at, max_runs, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+     RETURNING id, schedule_pda, mint_address, recurrence,
+               scheduled_at, status, runs_completed, max_runs,
+               last_error, tx_signature, created_at, confirmed_at",
         wallet,
         body.schedule_pda,
+        body.created_at_seed, // ← add
         delegation.id,
         body.mint_address,
         recipients_json,
         body.recurrence,
         body.scheduled_at,
-        body.max_runs,   // ✅ was missing
+        body.max_runs,
     )
     .fetch_one(&state.db)
     .await
@@ -242,9 +333,7 @@ pub async fn cancel(
 
 // ── GET /delegate/instruction ─────────────────────────────────────────────────
 
-pub async fn delegate_instruction(
-    AuthUser(wallet): AuthUser,
-) -> Json<DelegateInstructionResponse> {
+pub async fn delegate_instruction(AuthUser(wallet): AuthUser) -> Json<DelegateInstructionResponse> {
     Json(DelegateInstructionResponse {
         message: format!(
             "Build and sign the delegate instruction client-side for wallet {}. \

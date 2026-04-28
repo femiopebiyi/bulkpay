@@ -28,12 +28,17 @@ export interface BatchRecipient {
 
 export interface ScheduleRecord {
   id: string;
-  name: string;
-  recurrence: string;
-  nextRun: string;
-  runsCompleted: number;
-  maxRuns: number;
-  status: "active" | "running" | "cancelled";
+  schedule_pda: string;
+  mint_address: string;
+  recurrence: "once" | "daily" | "weekly" | "monthly";
+  scheduled_at: string;
+  status: "pending" | "running" | "confirmed" | "failed" | "cancelled";
+  runs_completed: number;
+  max_runs: number;
+  last_error: string | null;
+  tx_signature: string | null;
+  created_at: string;
+  confirmed_at: string | null;
 }
 
 export interface MintRecord {

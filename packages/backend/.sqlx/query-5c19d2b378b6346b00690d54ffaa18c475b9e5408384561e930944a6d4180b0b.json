@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO scheduled_batches\n             (sender_pubkey, schedule_pda, delegation_id, mint_address,\n              recipients, recurrence, scheduled_at, max_runs, status)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')\n         RETURNING id, schedule_pda, mint_address, recurrence,\n                   scheduled_at, status, runs_completed, max_runs,\n                   last_error, tx_signature, created_at, confirmed_at",
+  "query": "INSERT INTO scheduled_batches\n         (sender_pubkey, schedule_pda, created_at_seed, delegation_id, mint_address,\n          recipients, recurrence, scheduled_at, max_runs, status)\n     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')\n     RETURNING id, schedule_pda, mint_address, recurrence,\n               scheduled_at, status, runs_completed, max_runs,\n               last_error, tx_signature, created_at, confirmed_at",
   "describe": {
     "columns": [
       {
@@ -68,6 +68,7 @@
       "Left": [
         "Varchar",
         "Varchar",
+        "Int8",
         "Uuid",
         "Varchar",
         "Jsonb",
@@ -91,5 +92,5 @@
       true
     ]
   },
-  "hash": "dd2e9fbb77e6a10e31b0b22990e993e44513d0a996c213621b82e0425d295b4d"
+  "hash": "5c19d2b378b6346b00690d54ffaa18c475b9e5408384561e930944a6d4180b0b"
 }

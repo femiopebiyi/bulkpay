@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduler_delegations\n             (sender_pubkey, delegate_pda, mint_address, max_amount, expires_at, is_active)\n         VALUES ($1, $2, $3, $4, $5, true)\n         ON CONFLICT (sender_pubkey, mint_address)\n         DO UPDATE SET\n             delegate_pda = EXCLUDED.delegate_pda,\n             max_amount   = EXCLUDED.max_amount,\n             expires_at   = EXCLUDED.expires_at,\n             is_active    = true,\n             revoked_at   = NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5945977148f826b53f1a36f98da882891506a716418083693b06e4714f632bc8"
+}
