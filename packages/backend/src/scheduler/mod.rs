@@ -149,7 +149,6 @@ async fn execute_batch(
     batch_id: uuid::Uuid,
     recipients: &serde_json::Value,
 ) -> anyhow::Result<String> {
-    // 1. Deserialise recipients from JSONB
     #[derive(serde::Deserialize)]
     struct RecipientEntry {
         wallet: String,
@@ -163,27 +162,22 @@ async fn execute_batch(
         return Err(anyhow::anyhow!("No recipients in batch"));
     }
 
-    // 2. Parse keys
-    let mint_address = sqlx::query_scalar!(
-        "SELECT mint_address FROM scheduled_batches WHERE id = $1",
+    // 2. Fetch everything needed from DB in one query
+    let row = sqlx::query!(
+        "SELECT mint_address, sender_pubkey, schedule_pda, created_at_seed
+         FROM scheduled_batches WHERE id = $1",
         batch_id,
     )
     .fetch_one(&state.db)
     .await?;
 
-    let sender_pubkey = sqlx::query_scalar!(
-        "SELECT sender_pubkey FROM scheduled_batches WHERE id = $1",
-        batch_id,
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let mint = Pubkey::from_str(&row.mint_address)?;
+    let sender = Pubkey::from_str(&row.sender_pubkey)?;
 
-    let mint = Pubkey::from_str(&mint_address)?;
-    let sender = Pubkey::from_str(&sender_pubkey)?;
     let token_prog = spl_token::id();
     let executor = &state.executor_keypair;
 
-    // 3. Derive ATAs for all recipients
+    // 3. Derive ATAs
     let mut wallets: Vec<Pubkey> = Vec::with_capacity(entries.len());
     let mut atas: Vec<Pubkey> = Vec::with_capacity(entries.len());
     let mut amounts: Vec<u64> = Vec::with_capacity(entries.len());
@@ -197,8 +191,7 @@ async fn execute_batch(
         amounts.push(entry.amount as u64);
     }
 
-    // 4. Pre-ATA pass — create missing ATAs in batches of 20
-    // Check existence first using getMultipleAccounts (one RPC call)
+    // 4. Pre-ATA pass
     let ata_infos = state.rpc.get_multiple_accounts(&atas)?;
 
     let missing_ixs: Vec<Instruction> = atas
@@ -206,7 +199,7 @@ async fn execute_batch(
         .zip(wallets.iter())
         .zip(ata_infos.iter())
         .filter(|(_, info)| info.is_none())
-        .map(|((ata, wallet), _)| {
+        .map(|((_, wallet), _)| {
             create_associated_token_account_idempotent(
                 &executor.pubkey(),
                 wallet,
@@ -229,27 +222,51 @@ async fn execute_batch(
         }
     }
 
-    // 5. Fetch schedule PDA from DB
-    let created_at_seed = sqlx::query_scalar!(
-        "SELECT created_at_seed FROM scheduled_batches WHERE id = $1",
-        batch_id,
-    )
-    .fetch_one(&state.db)
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("created_at_seed is null for batch {}", batch_id))?;
+    // 5. Derive schedule PDA from stored seed
 
-    let mut seed_buf = [0u8; 8];
-    seed_buf.copy_from_slice(&created_at_seed.to_le_bytes());
+    let schedule_pda = Pubkey::from_str(&row.schedule_pda)?;
 
     let program_id = Pubkey::from_str(
         &std::env::var("PROGRAM_ID")
             .unwrap_or_else(|_| "Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT".to_string()),
     )?;
 
-    let (schedule_pda, _) =
-        Pubkey::find_program_address(&[b"schedule", sender.as_ref(), &seed_buf], &program_id);
+    // Debug — verify the stored PDA exists on-chain
+    tracing::info!("Batch {} — using stored_pda: {}", batch_id, schedule_pda,);
 
-    // Derive PDAs needed by execute_schedule
+    if let Ok(response) = state.rpc.get_account_with_commitment(
+        &schedule_pda,
+        solana_sdk::commitment_config::CommitmentConfig::confirmed(),
+    ) {
+        if let Some(acc) = response.value {
+            // Read owner from account data (offset 8, after discriminator)
+            let on_chain_owner = Pubkey::try_from(&acc.data[8..40]).unwrap_or_default();
+
+            // Try both possible offsets for created_at
+            let created_at_at_73 =
+                i64::from_le_bytes(acc.data[73..81].try_into().unwrap_or([0u8; 8]));
+            let created_at_at_76 =
+                i64::from_le_bytes(acc.data[76..84].try_into().unwrap_or([0u8; 8]));
+
+            // After fetching the row, log both values
+            tracing::info!(
+                "DB created_at_seed: {:?}, on_chain_created_at@73: {}",
+                row.created_at_seed,
+                created_at_at_73,
+            );
+
+            tracing::info!(
+            "on_chain_owner: {}, executor_sender: {}, match: {}, created_at@73: {}, created_at@76: {}",
+            on_chain_owner,
+            sender,
+            on_chain_owner == sender,
+            created_at_at_73,
+            created_at_at_76,
+        );
+        }
+    }
+
+    // 6. Derive remaining PDAs
     let (user_account_pda, _) =
         Pubkey::find_program_address(&[b"useraccount", sender.as_ref()], &program_id);
     let (transfer_log_pda, _) =
@@ -263,8 +280,7 @@ async fn execute_batch(
 
     let sender_ata = get_associated_token_address_with_program_id(&sender, &mint, &token_prog);
 
-    // 6. Build execute_schedule instruction accounts
-    // remaining_accounts = ATAs only (Option B — wallet read from ATA bytes 32..64)
+    // 7. Build account metas
     let mut account_metas = vec![
         solana_sdk::instruction::AccountMeta::new(executor.pubkey(), true),
         solana_sdk::instruction::AccountMeta::new_readonly(sender, false),
@@ -282,14 +298,13 @@ async fn execute_batch(
         solana_sdk::instruction::AccountMeta::new_readonly(solana_sdk::system_program::id(), false),
     ];
 
-    // Append ATAs as remaining_accounts
     for ata in &atas {
         account_metas.push(solana_sdk::instruction::AccountMeta::new(*ata, false));
     }
 
-    // 7. Encode the instruction discriminator for execute_schedule
-    // Anchor discriminator = first 8 bytes of sha256("global:execute_schedule")
+    // 8. Discriminator
     let discriminator = {
+        use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
         hasher.update(b"global:execute_schedule");
         let result = hasher.finalize();
@@ -299,10 +314,10 @@ async fn execute_batch(
     let ix = Instruction {
         program_id,
         accounts: account_metas,
-        data: discriminator, // execute_schedule takes no extra args
+        data: discriminator,
     };
 
-    // 8. Send and confirm
+    // 9. Send and confirm
     let blockhash = state.rpc.get_latest_blockhash()?;
     let tx = Transaction::new_signed_with_payer(
         &[ix],
