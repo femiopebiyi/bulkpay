@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO scheduled_batches\n         (sender_pubkey, schedule_pda, created_at_seed, delegation_id, mint_address,\n          recipients, recurrence, scheduled_at, max_runs, status)\n     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')\n     RETURNING id, schedule_pda, mint_address, recurrence,\n               scheduled_at, status, runs_completed, max_runs,\n               last_error, tx_signature, created_at, confirmed_at",
+  "query": "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,\n                recurrence, scheduled_at, status, runs_completed, max_runs,\n                last_error, tx_signature, created_at, confirmed_at\n         FROM scheduled_batches\n         WHERE id = $1 AND sender_pubkey = $2",
   "describe": {
     "columns": [
       {
@@ -15,70 +15,75 @@
       },
       {
         "ordinal": 2,
+        "name": "created_at_seed",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "mint_address",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
+        "name": "recipients",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
         "name": "recurrence",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "scheduled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "runs_completed",
         "type_info": "Int4"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "max_runs",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "last_error",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "tx_signature",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "confirmed_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Varchar",
-        "Varchar",
-        "Int8",
         "Uuid",
-        "Varchar",
-        "Jsonb",
-        "Varchar",
-        "Timestamptz",
-        "Int4"
+        "Text"
       ]
     },
     "nullable": [
       false,
+      false,
+      true,
       false,
       false,
       false,
@@ -92,5 +97,5 @@
       true
     ]
   },
-  "hash": "5c19d2b378b6346b00690d54ffaa18c475b9e5408384561e930944a6d4180b0b"
+  "hash": "18916fb439942e991bc814d43b25cce85c6aab7d951887bb1111655bfbef7822"
 }

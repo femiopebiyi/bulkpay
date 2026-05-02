@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, schedule_pda, mint_address, recurrence,\n                scheduled_at, status, runs_completed, max_runs,\n                last_error, tx_signature, created_at, confirmed_at\n         FROM scheduled_batches\n         WHERE id = $1 AND sender_pubkey = $2",
+  "query": "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,\n                recurrence, scheduled_at, status, runs_completed, max_runs,\n                last_error, tx_signature, created_at, confirmed_at\n         FROM scheduled_batches\n         WHERE sender_pubkey = $1\n         ORDER BY scheduled_at ASC",
   "describe": {
     "columns": [
       {
@@ -15,63 +15,74 @@
       },
       {
         "ordinal": 2,
+        "name": "created_at_seed",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "mint_address",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
+        "name": "recipients",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
         "name": "recurrence",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "scheduled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "runs_completed",
         "type_info": "Int4"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "max_runs",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "last_error",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "tx_signature",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "confirmed_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Text"
       ]
     },
     "nullable": [
       false,
+      false,
+      true,
       false,
       false,
       false,
@@ -85,5 +96,5 @@
       true
     ]
   },
-  "hash": "c3ce5e5c35bd680e4fe25f89664a5dbaa4f159d4738b1d11ae157fe7a636cec1"
+  "hash": "86e2df1072553d91e809c738f8a62b4397de1e2d4c61ad1ec72509da2118c760"
 }

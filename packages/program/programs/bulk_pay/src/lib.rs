@@ -67,6 +67,13 @@ pub mod bulk_pay {
         instructions::close_schedule::close_schedule(ctx)
     }
 
+    pub fn expand_delegation(
+        ctx: Context<ExpandDelegation>,
+        additional_amount: u64,
+        new_expires_at: i64,
+    ) -> Result<()> {
+        instructions::expand_delegation::expand_delegation(ctx, additional_amount, new_expires_at)
+    }
     pub fn close_delegation(ctx: Context<CloseDelegation>) -> Result<()> {
         instructions::close_delegation::close_delegation(ctx)
     }

@@ -148,3 +148,25 @@ export async function createSchedule(body: {
     if (!res.ok) throw new Error("Failed to create schedule");
     return res.json();
 }
+
+// Fetch all schedules for this user
+export async function fetchAllSchedules(): Promise<ScheduleRecord[]> {
+    const res = await fetch(`${BASE_URL}/schedules`, {
+        headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error("Failed to fetch schedules");
+    return res.json();
+}
+
+// Update existing delegation in DB
+export async function updateDelegate(body: {
+    max_amount: number;
+    expires_at: string;
+}): Promise<void> {
+    const res = await fetch(`${BASE_URL}/delegate`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("Failed to update delegation");
+}

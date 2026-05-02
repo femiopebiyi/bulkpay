@@ -29,7 +29,14 @@ export interface BatchRecipient {
 export interface ScheduleRecord {
   id: string;
   schedule_pda: string;
+  created_at_seed: number | null;  // ← new field from backend
   mint_address: string;
+  recipients: Array<{
+    wallet: string;
+    amount: number;
+    name?: string;
+    description?: string;
+  }>;
   recurrence: "once" | "daily" | "weekly" | "monthly";
   scheduled_at: string;
   status: "pending" | "running" | "confirmed" | "failed" | "cancelled";

@@ -12,13 +12,13 @@ pub struct Delegate<'info> {
     pub sender: Signer<'info>,
 
     #[account(
-        init_if_needed,
-        payer  = sender,
-        space  = 8 + DelegationAccount::INIT_SPACE,
-        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
-        bump
-    )]
-    pub delegation_account: Account<'info, DelegationAccount>,
+    init, 
+    payer = sender,
+    space = 8 + DelegationAccount::INIT_SPACE,
+    seeds = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
+    bump
+)]
+pub delegation_account: Account<'info, DelegationAccount>,
 
     #[account(
         mut,

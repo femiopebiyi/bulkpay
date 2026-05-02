@@ -472,6 +472,7 @@ export async function submitSchedule(
     isDelegated: boolean,
     createdAt: number,
     delegateParams?: { maxAmount: bigint; expiresAt: number },
+    expandParams?: { additionalAmount: bigint; newExpiresAt: number },
 ): Promise<{ schedulePda: string; createdAt: number }> {
     const ixs: TransactionInstruction[] = [];
 
@@ -480,6 +481,13 @@ export async function submitSchedule(
             program, sender, delegateParams.maxAmount, delegateParams.expiresAt,
         );
         ixs.push(delegateIx);
+    }
+
+    if (expandParams && expandParams.additionalAmount > 0n) {
+        const expandIx = await buildExpandDelegationIx(
+            program, sender, expandParams.additionalAmount, expandParams.newExpiresAt,
+        );
+        ixs.push(expandIx);
     }
 
     const { ix: scheduleIx, schedulePda: tentativePda } = await buildCreateScheduleIx(
@@ -504,7 +512,6 @@ export async function submitSchedule(
         "confirmed"
     );
 
-    // ✅ Only verify the account exists — do NOT read raw bytes
     const accountInfo = await connection.getAccountInfo(tentativePda, "confirmed");
     if (!accountInfo || !accountInfo.owner.equals(program.programId)) {
         throw new Error("Schedule account not found at expected PDA");
@@ -514,4 +521,37 @@ export async function submitSchedule(
         schedulePda: tentativePda.toBase58(),
         createdAt,
     };
+}
+
+export async function buildExpandDelegationIx(
+    program: Program<BulkPay>,
+    sender: PublicKey,
+    additionalAmount: bigint,
+    newExpiresAt: number,
+): Promise<TransactionInstruction> {
+    const [delegationAccount] = PublicKey.findProgramAddressSync(
+        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer()],
+        program.programId,
+    );
+
+    const [schedulerAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("scheduler_authority")],
+        program.programId,
+    );
+
+    const senderAta = getAssociatedTokenAddressSync(
+        USDC_MINT, sender, false, TOKEN_PROGRAM_ID
+    );
+
+    return program.methods
+        .expandDelegation(new BN(additionalAmount.toString()), new BN(newExpiresAt))
+        .accountsPartial({
+            sender,
+            delegationAccount,
+            senderAta,
+            schedulerAuthority,
+            tokenMint: USDC_MINT,
+            tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .instruction();
 }

@@ -50,4 +50,8 @@ pub enum BulkTransferError {
     InvalidCreatedAt,
     #[msg("Batch exceeds maximum of 35 recipients per transaction")]
     BatchTooLarge,
+    #[msg("new expiry must be in the future")]
+    InvalidExpiry,
+    #[msg("Expiry date cannot decrease")]
+    ExpiryCannotDecrease,
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT DISTINCT ON (schedule_pda)\n        id, schedule_pda, mint_address, recurrence,\n        scheduled_at, status, max_runs, last_error,\n        tx_signature, created_at, confirmed_at,\n        (SELECT COALESCE(SUM(runs_completed), 0)\n         FROM scheduled_batches sb2\n         WHERE sb2.schedule_pda  = sb.schedule_pda\n           AND sb2.sender_pubkey = sb.sender_pubkey\n           AND sb2.status = 'confirmed'\n        )::int AS \"runs_completed!: i32\"\n FROM scheduled_batches sb\n WHERE sender_pubkey = $1\n   AND status != 'confirmed'\n ORDER BY schedule_pda, scheduled_at ASC",
+  "query": "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,\n                recurrence, scheduled_at, status, runs_completed, max_runs,\n                last_error, tx_signature, created_at, confirmed_at\n         FROM scheduled_batches\n         WHERE schedule_pda  = $1\n           AND sender_pubkey = $2\n         ORDER BY scheduled_at ASC",
   "describe": {
     "columns": [
       {
@@ -15,63 +15,77 @@
       },
       {
         "ordinal": 2,
+        "name": "created_at_seed",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
         "name": "mint_address",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
+        "name": "recipients",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
         "name": "recurrence",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "scheduled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "status",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
+        "name": "runs_completed",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
         "name": "max_runs",
         "type_info": "Int4"
       },
       {
-        "ordinal": 7,
+        "ordinal": 10,
         "name": "last_error",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 11,
         "name": "tx_signature",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 9,
+        "ordinal": 12,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 13,
         "name": "confirmed_at",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 11,
-        "name": "runs_completed!: i32",
-        "type_info": "Int4"
       }
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
     "nullable": [
       false,
       false,
+      true,
+      false,
+      false,
       false,
       false,
       false,
@@ -80,9 +94,8 @@
       true,
       true,
       false,
-      true,
-      null
+      true
     ]
   },
-  "hash": "08893c28fbbf67b1931bb2cf53e6ba6f66d4c23a2ad093e68e0afd3c9f405178"
+  "hash": "ed0fcd36af0c10c542fc586a895c1f9b98a9ffd6e218756727df3ef70a66e537"
 }

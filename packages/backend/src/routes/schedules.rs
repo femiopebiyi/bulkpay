@@ -19,13 +19,10 @@ pub fn router() -> Router<AppState> {
             "/delegate",
             get(check_delegate)
                 .post(register_delegate)
+                .patch(update_delegate)
                 .delete(revoke_delegate),
         )
 }
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-// ── POST /delegate — register delegation after user signs on-chain ────────────
 
 #[derive(Serialize)]
 pub struct DelegationStatus {
@@ -36,9 +33,15 @@ pub struct DelegationStatus {
 
 #[derive(Deserialize)]
 pub struct RegisterDelegateRequest {
-    pub delegate_pda: String, // scheduler_authority PDA address
+    pub delegate_pda: String,
     pub mint_address: String,
-    pub max_amount: i64, // in base units
+    pub max_amount: i64,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateDelegateRequest {
+    pub max_amount: i64,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -48,9 +51,9 @@ pub struct CreateScheduleRequest {
     pub created_at_seed: i64,
     pub mint_address: String,
     pub recipients: Vec<ScheduledRecipientInput>,
-    pub recurrence: String, // "once" | "daily" | "weekly" | "monthly"
+    pub recurrence: String,
     pub scheduled_at: chrono::DateTime<chrono::Utc>,
-    pub max_runs: i32, // 0 = infinite, mirrors on-chain ScheduleAccount
+    pub max_runs: i32,
     pub notes: Option<String>,
 }
 
@@ -63,10 +66,12 @@ pub struct ScheduledRecipientInput {
 }
 
 #[derive(Serialize)]
-pub struct ScheduleSummary {
+pub struct ScheduleListItem {
     pub id: Uuid,
     pub schedule_pda: String,
+    pub created_at_seed: Option<i64>,
     pub mint_address: String,
+    pub recipients: serde_json::Value,
     pub recurrence: String,
     pub scheduled_at: chrono::DateTime<chrono::Utc>,
     pub status: String,
@@ -82,8 +87,6 @@ pub struct ScheduleSummary {
 pub struct DelegateInstructionResponse {
     pub message: String,
 }
-
-// ── GET /schedules ────────────────────────────────────────────────────────────
 
 pub async fn check_delegate(
     State(state): State<AppState>,
@@ -145,42 +148,82 @@ pub async fn register_delegate(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn update_delegate(
+    State(state): State<AppState>,
+    AuthUser(wallet): AuthUser,
+    Json(body): Json<UpdateDelegateRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let result = sqlx::query!(
+        "UPDATE scheduler_delegations
+         SET max_amount = $1,
+             expires_at = $2,
+             is_active  = true,
+             revoked_at = NULL
+         WHERE sender_pubkey = $3
+           AND is_active     = true",
+        body.max_amount,
+        body.expires_at,
+        wallet,
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "No active delegation found to update".to_string(),
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn list(
     State(state): State<AppState>,
     AuthUser(wallet): AuthUser,
-) -> Result<Json<Vec<ScheduleSummary>>, (StatusCode, String)> {
-    let rows = sqlx::query_as!(
-        ScheduleSummary,
-        "SELECT DISTINCT ON (schedule_pda)
-        id, schedule_pda, mint_address, recurrence,
-        scheduled_at, status, max_runs, last_error,
-        tx_signature, created_at, confirmed_at,
-        (SELECT COALESCE(SUM(runs_completed), 0)
-         FROM scheduled_batches sb2
-         WHERE sb2.schedule_pda  = sb.schedule_pda
-           AND sb2.sender_pubkey = sb.sender_pubkey
-           AND sb2.status = 'confirmed'
-        )::int AS \"runs_completed!: i32\"
- FROM scheduled_batches sb
- WHERE sender_pubkey = $1
-   AND status != 'confirmed'
- ORDER BY schedule_pda, scheduled_at ASC",
+) -> Result<Json<Vec<ScheduleListItem>>, (StatusCode, String)> {
+    let rows = sqlx::query!(
+        "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,
+                recurrence, scheduled_at, status, runs_completed, max_runs,
+                last_error, tx_signature, created_at, confirmed_at
+         FROM scheduled_batches
+         WHERE sender_pubkey = $1
+         ORDER BY scheduled_at ASC",
         wallet,
     )
     .fetch_all(&state.db)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(rows))
-}
+    let schedules: Vec<ScheduleListItem> = rows
+        .into_iter()
+        .map(|r| ScheduleListItem {
+            id: r.id,
+            schedule_pda: r.schedule_pda,
+            created_at_seed: r.created_at_seed,
+            mint_address: r.mint_address,
+            recipients: r.recipients,
+            recurrence: r.recurrence,
+            scheduled_at: r.scheduled_at,
+            status: r.status,
+            runs_completed: r.runs_completed,
+            max_runs: r.max_runs,
+            last_error: r.last_error,
+            tx_signature: r.tx_signature,
+            created_at: r.created_at,
+            confirmed_at: r.confirmed_at,
+        })
+        .collect();
 
-// ── POST /schedules ───────────────────────────────────────────────────────────
+    Ok(Json(schedules))
+}
 
 pub async fn create(
     State(state): State<AppState>,
     AuthUser(wallet): AuthUser,
     Json(body): Json<CreateScheduleRequest>,
-) -> Result<Json<ScheduleSummary>, (StatusCode, String)> {
+) -> Result<Json<ScheduleListItem>, (StatusCode, String)> {
     let valid = ["once", "daily", "weekly", "monthly"];
     if !valid.contains(&body.recurrence.as_str()) {
         return Err((
@@ -189,7 +232,6 @@ pub async fn create(
         ));
     }
 
-    // Verify active delegation exists for this sender + mint
     let delegation = sqlx::query!(
         "SELECT id FROM scheduler_delegations
          WHERE sender_pubkey = $1
@@ -210,19 +252,17 @@ pub async fn create(
     let recipients_json = serde_json::to_value(&body.recipients)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // ✅ $8 = max_runs, $9 = 'pending' hardcoded as status
-    let row = sqlx::query_as!(
-        ScheduleSummary,
+    let row = sqlx::query!(
         "INSERT INTO scheduled_batches
          (sender_pubkey, schedule_pda, created_at_seed, delegation_id, mint_address,
           recipients, recurrence, scheduled_at, max_runs, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
-     RETURNING id, schedule_pda, mint_address, recurrence,
-               scheduled_at, status, runs_completed, max_runs,
-               last_error, tx_signature, created_at, confirmed_at",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+         RETURNING id, schedule_pda, created_at_seed, mint_address, recipients,
+                   recurrence, scheduled_at, status, runs_completed, max_runs,
+                   last_error, tx_signature, created_at, confirmed_at",
         wallet,
         body.schedule_pda,
-        body.created_at_seed, // ← add
+        body.created_at_seed,
         delegation.id,
         body.mint_address,
         recipients_json,
@@ -234,20 +274,32 @@ pub async fn create(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(row))
+    Ok(Json(ScheduleListItem {
+        id: row.id,
+        schedule_pda: row.schedule_pda,
+        created_at_seed: row.created_at_seed,
+        mint_address: row.mint_address,
+        recipients: row.recipients,
+        recurrence: row.recurrence,
+        scheduled_at: row.scheduled_at,
+        status: row.status,
+        runs_completed: row.runs_completed,
+        max_runs: row.max_runs,
+        last_error: row.last_error,
+        tx_signature: row.tx_signature,
+        created_at: row.created_at,
+        confirmed_at: row.confirmed_at,
+    }))
 }
-
-// ── GET /schedules/:id ────────────────────────────────────────────────────────
 
 pub async fn detail(
     State(state): State<AppState>,
     AuthUser(wallet): AuthUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<ScheduleSummary>, (StatusCode, String)> {
-    let row = sqlx::query_as!(
-        ScheduleSummary,
-        "SELECT id, schedule_pda, mint_address, recurrence,
-                scheduled_at, status, runs_completed, max_runs,
+) -> Result<Json<ScheduleListItem>, (StatusCode, String)> {
+    let row = sqlx::query!(
+        "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,
+                recurrence, scheduled_at, status, runs_completed, max_runs,
                 last_error, tx_signature, created_at, confirmed_at
          FROM scheduled_batches
          WHERE id = $1 AND sender_pubkey = $2",
@@ -259,16 +311,29 @@ pub async fn detail(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or((StatusCode::NOT_FOUND, "Schedule not found".to_string()))?;
 
-    Ok(Json(row))
+    Ok(Json(ScheduleListItem {
+        id: row.id,
+        schedule_pda: row.schedule_pda,
+        created_at_seed: row.created_at_seed,
+        mint_address: row.mint_address,
+        recipients: row.recipients,
+        recurrence: row.recurrence,
+        scheduled_at: row.scheduled_at,
+        status: row.status,
+        runs_completed: row.runs_completed,
+        max_runs: row.max_runs,
+        last_error: row.last_error,
+        tx_signature: row.tx_signature,
+        created_at: row.created_at,
+        confirmed_at: row.confirmed_at,
+    }))
 }
-
-// ── GET /schedules/:id/history ────────────────────────────────────────────────
 
 pub async fn history(
     State(state): State<AppState>,
     AuthUser(wallet): AuthUser,
     Path(id): Path<Uuid>,
-) -> Result<Json<Vec<ScheduleSummary>>, (StatusCode, String)> {
+) -> Result<Json<Vec<ScheduleListItem>>, (StatusCode, String)> {
     let schedule = sqlx::query_scalar!(
         "SELECT schedule_pda FROM scheduled_batches
          WHERE id = $1 AND sender_pubkey = $2",
@@ -280,10 +345,9 @@ pub async fn history(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or((StatusCode::NOT_FOUND, "Schedule not found".to_string()))?;
 
-    let rows = sqlx::query_as!(
-        ScheduleSummary,
-        "SELECT id, schedule_pda, mint_address, recurrence,
-                scheduled_at, status, runs_completed, max_runs,
+    let rows = sqlx::query!(
+        "SELECT id, schedule_pda, created_at_seed, mint_address, recipients,
+                recurrence, scheduled_at, status, runs_completed, max_runs,
                 last_error, tx_signature, created_at, confirmed_at
          FROM scheduled_batches
          WHERE schedule_pda  = $1
@@ -296,10 +360,28 @@ pub async fn history(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(rows))
-}
+    let schedules: Vec<ScheduleListItem> = rows
+        .into_iter()
+        .map(|r| ScheduleListItem {
+            id: r.id,
+            schedule_pda: r.schedule_pda,
+            created_at_seed: r.created_at_seed,
+            mint_address: r.mint_address,
+            recipients: r.recipients,
+            recurrence: r.recurrence,
+            scheduled_at: r.scheduled_at,
+            status: r.status,
+            runs_completed: r.runs_completed,
+            max_runs: r.max_runs,
+            last_error: r.last_error,
+            tx_signature: r.tx_signature,
+            created_at: r.created_at,
+            confirmed_at: r.confirmed_at,
+        })
+        .collect();
 
-// ── DELETE /schedules/:id — cancel ───────────────────────────────────────────
+    Ok(Json(schedules))
+}
 
 pub async fn cancel(
     State(state): State<AppState>,
@@ -326,12 +408,8 @@ pub async fn cancel(
         ));
     }
 
-    // Frontend must also call close_schedule on-chain to emit
-    // ScheduleCancelled event and reclaim rent
     Ok(StatusCode::NO_CONTENT)
 }
-
-// ── GET /delegate/instruction ─────────────────────────────────────────────────
 
 pub async fn delegate_instruction(AuthUser(wallet): AuthUser) -> Json<DelegateInstructionResponse> {
     Json(DelegateInstructionResponse {
@@ -342,8 +420,6 @@ pub async fn delegate_instruction(AuthUser(wallet): AuthUser) -> Json<DelegateIn
         ),
     })
 }
-
-// ── DELETE /delegate — revoke ─────────────────────────────────────────────────
 
 pub async fn revoke_delegate(
     State(state): State<AppState>,
