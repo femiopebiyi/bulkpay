@@ -13,6 +13,7 @@ use crate::{
 };
 
 #[derive(Accounts)]
+#[instruction(created_at: i64)]
 pub struct ExecuteSchedule<'info> {
     // Backend fee payer — your backend wallet, not the original sender
     #[account(mut)]
@@ -26,7 +27,7 @@ pub struct ExecuteSchedule<'info> {
 
     #[account(
         mut,
-        seeds = [b"schedule", sender.key().as_ref(), &schedule_account.created_at.to_le_bytes()],
+        seeds = [b"schedule", sender.key().as_ref(), &created_at.to_le_bytes()],
         bump   = schedule_account.bump,
         constraint = schedule_account.is_active
             @ BulkTransferError::ScheduleInactive,
@@ -87,6 +88,7 @@ pub struct ExecuteSchedule<'info> {
 
 pub fn execute_schedule<'info>(
     ctx: Context<'_, '_, '_, 'info, ExecuteSchedule<'info>>,
+    created_at: i64,
 ) -> Result<()> {
     let remaining = ctx.remaining_accounts.to_vec();
     let recipients = ctx.accounts.schedule_account.recipients.clone();

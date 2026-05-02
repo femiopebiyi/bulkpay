@@ -705,9 +705,8 @@
                 "path": "sender"
               },
               {
-                "kind": "account",
-                "path": "schedule_account.created_at",
-                "account": "ScheduleAccount"
+                "kind": "arg",
+                "path": "created_at"
               }
             ]
           }
@@ -873,7 +872,12 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "created_at",
+          "type": "i64"
+        }
+      ]
     },
     {
       "name": "init_transfer_log",

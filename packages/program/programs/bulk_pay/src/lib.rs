@@ -58,8 +58,9 @@ pub mod bulk_pay {
 
     pub fn execute_schedule<'info>(
         ctx: Context<'_, '_, '_, 'info, ExecuteSchedule<'info>>,
+        created_at: i64,
     ) -> Result<()> {
-        instructions::execute_schedule::execute_schedule(ctx)
+        instructions::execute_schedule::execute_schedule(ctx, created_at)
     }
 
     pub fn close_schedule(ctx: Context<CloseSchedule>) -> Result<()> {

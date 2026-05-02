@@ -463,18 +463,16 @@ export async function buildCreateScheduleIx(
     return { ix, schedulePda: scheduleAccount };
 }
 
-// lib/transaction.ts — export this helper
-// lib/transaction.ts — update submitSchedule return
 
 export async function submitSchedule(
-    program:      Program<BulkPay>,
-    sender:       PublicKey,
-    params:       ScheduleParams,
-    signAndSend:  (tx: VersionedTransaction) => Promise<string>,
-    isDelegated:  boolean,
+    program: Program<BulkPay>,
+    sender: PublicKey,
+    params: ScheduleParams,
+    signAndSend: (tx: VersionedTransaction) => Promise<string>,
+    isDelegated: boolean,
+    createdAt: number,
     delegateParams?: { maxAmount: bigint; expiresAt: number },
 ): Promise<{ schedulePda: string; createdAt: number }> {
-    const createdAt = Math.floor(Date.now() / 1000);
     const ixs: TransactionInstruction[] = [];
 
     if (!isDelegated && delegateParams) {
@@ -493,12 +491,12 @@ export async function submitSchedule(
         await connection.getLatestBlockhash("confirmed");
 
     const message = new TransactionMessage({
-        payerKey:        sender,
+        payerKey: sender,
         recentBlockhash: blockhash,
-        instructions:    ixs,
+        instructions: ixs,
     }).compileToV0Message();
 
-    const tx  = new VersionedTransaction(message);
+    const tx = new VersionedTransaction(message);
     const sig = await signAndSend(tx);
 
     await connection.confirmTransaction(
@@ -506,40 +504,14 @@ export async function submitSchedule(
         "confirmed"
     );
 
-    // Read on-chain created_at — this is the authoritative seed value
-    // ScheduleAccount layout: discriminator(8) + owner(32) + mint(32) + recurrence(1) + created_at(8)
-    const tentativeInfo = await connection.getAccountInfo(tentativePda, "confirmed");
-
-    let finalPda = tentativePda;
-    let onChainCreatedAt = createdAt;
-
-    if (tentativeInfo) {
-        // Tentative PDA exists — client timestamp matched on-chain Clock
-        onChainCreatedAt = Number(tentativeInfo.data.readBigInt64LE(73));
-    } else {
-        // Tentative PDA doesn't exist — Clock differed, re-derive from on-chain value
-        // We need to find the actual account — scan by checking +/- 10 seconds
-        for (let delta = -10; delta <= 10; delta++) {
-            const candidate = createdAt + delta;
-            const candidateBuf = Buffer.alloc(8);
-            candidateBuf.writeBigInt64LE(BigInt(candidate));
-
-            const [candidatePda] = PublicKey.findProgramAddressSync(
-                [Buffer.from("schedule"), sender.toBuffer(), candidateBuf],
-                program.programId,
-            );
-
-            const info = await connection.getAccountInfo(candidatePda, "confirmed");
-            if (info) {
-                onChainCreatedAt = Number(info.data.readBigInt64LE(73));
-                finalPda = candidatePda;
-                break;
-            }
-        }
+    // ✅ Only verify the account exists — do NOT read raw bytes
+    const accountInfo = await connection.getAccountInfo(tentativePda, "confirmed");
+    if (!accountInfo || !accountInfo.owner.equals(program.programId)) {
+        throw new Error("Schedule account not found at expected PDA");
     }
 
     return {
-        schedulePda: finalPda.toBase58(),
-        createdAt:   onChainCreatedAt,
+        schedulePda: tentativePda.toBase58(),
+        createdAt,
     };
 }

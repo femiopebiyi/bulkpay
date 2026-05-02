@@ -118,7 +118,6 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
     setPreflightErrors([]);
     setPreflightWarnings([]);
 
-    // Basic validation
     if (filled.length === 0) {
       setPreflightErrors(["Add at least one recipient"]);
       return;
@@ -157,26 +156,25 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         return connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
       };
 
-      // Step 1 — ensure UserAccount + TransferLog exist
       await ensureAccountsExist(program, sender, signAndSend);
 
-      // Step 2 — check if delegation is active in DB
       setBatchProgress((p) => p ? { ...p, phase: "checking-atas" } : p);
       const delegation = await fetchDelegationStatus();
 
-      // Step 3 — derive delegation params from recipients
       const totalPerRun = filled.reduce(
         (sum, r) => sum + Math.round(parseFloat(r.amount) * 1_000_000), 0
       );
       const maxAmount = scheduleMaxRuns > 0
         ? BigInt(totalPerRun) * BigInt(scheduleMaxRuns)
-        : BigInt(totalPerRun) * BigInt(120); // ~10 years of monthly runs as cap for infinite
+        : BigInt(totalPerRun) * BigInt(120);
 
-      // Expiry = last run date + 7 day buffer, or 1 year for infinite
+      // ✅ GENERATE SEED ONCE HERE
+      const createdAt = Math.floor(Date.now() / 1000);
+
       const expiresAt = scheduleMaxRuns > 0
         ? Math.floor(firstRunAt.getTime() / 1000) +
         scheduleMaxRuns * intervalSeconds(scheduleRecurrence) + 604_800
-        : Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
+        : createdAt + 365 * 24 * 60 * 60; // use the same createdAt for consistency
 
       const params: ScheduleParams = {
         recipients: filled.map((r) => ({
@@ -191,19 +189,19 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         notes: batchTitle || undefined,
       };
 
-      // Step 4 — build + sign on-chain (delegate + create_schedule bundled if needed)
       setBatchProgress((p) => p ? { ...p, phase: "signing" } : p);
 
-      const { schedulePda, createdAt } = await submitSchedule(
+      // ✅ PASS THE SAME createdAt TO submitSchedule
+      const { schedulePda, createdAt: confirmedCreatedAt } = await submitSchedule(
         program,
         sender,
         params,
         signAndSend,
         delegation.active,
+        createdAt, // ← same seed
         delegation.active ? undefined : { maxAmount, expiresAt },
       );
 
-      // Step 5 — register delegation in DB if it was just created
       if (!delegation.active) {
         const [schedulerAuthority] = PublicKey.findProgramAddressSync(
           [Buffer.from("scheduler_authority")],
@@ -217,10 +215,10 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
         });
       }
 
-      // Step 6 — register schedule in DB
+      // ✅ SAVE THE EXACT SAME SEED TO DB
       await createSchedule({
         schedule_pda: schedulePda,
-        created_at_seed: createdAt,
+        created_at_seed: confirmedCreatedAt, // === createdAt
         mint_address: USDC_MINT.toBase58(),
         recipients: params.recipients,
         recurrence: params.recurrence,

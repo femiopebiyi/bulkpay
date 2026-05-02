@@ -29,7 +29,6 @@ pub struct CreateSchedule<'info> {
         init,
         payer  = sender,
         space  = ScheduleAccount::space_needed(recipients.len()),
-        // ✅ created_at from instruction args — no Clock::get()? in seeds
         seeds  = [b"schedule", sender.key().as_ref(), &created_at.to_le_bytes()],
         bump
     )]
@@ -84,7 +83,7 @@ pub fn create_schedule(
     s.owner = ctx.accounts.sender.key();
     s.mint = ctx.accounts.token_mint.key();
     s.recurrence = recurrence;
-    s.created_at = created_at; // ✅ store arg, not clock.unix_timestamp
+    s.created_at = created_at;
     s.next_run_at = first_run_at;
     s.max_runs = max_runs;
     s.runs_completed = 0;

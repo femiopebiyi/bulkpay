@@ -4,6 +4,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use crate::AppState;
+use anyhow::{anyhow, Result};
 
 const POLL_INTERVAL_SECS: u64 = 60;
 const MAX_RETRIES: i32 = 3;
@@ -162,7 +163,7 @@ async fn execute_batch(
         return Err(anyhow::anyhow!("No recipients in batch"));
     }
 
-    // 2. Fetch everything needed from DB in one query
+    // 1. Fetch row from DB
     let row = sqlx::query!(
         "SELECT mint_address, sender_pubkey, schedule_pda, created_at_seed
          FROM scheduled_batches WHERE id = $1",
@@ -171,13 +172,39 @@ async fn execute_batch(
     .fetch_one(&state.db)
     .await?;
 
+    let program_id = Pubkey::from_str(
+        &std::env::var("PROGRAM_ID")
+            .unwrap_or_else(|_| "Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT".to_string()),
+    )?;
+
     let mint = Pubkey::from_str(&row.mint_address)?;
     let sender = Pubkey::from_str(&row.sender_pubkey)?;
+    let created_at_seed = row
+        .created_at_seed
+        .ok_or_else(|| anyhow!("Missing created_at_seed in DB"))?;
+
+    // 2. Verify PDA integrity: re-derive from seed and compare to stored PDA
+    let created_at_bytes = created_at_seed.to_le_bytes();
+    let expected_pda = Pubkey::find_program_address(
+        &[b"schedule", sender.as_ref(), &created_at_bytes],
+        &program_id,
+    )
+    .0;
+
+    let schedule_pda = Pubkey::from_str(&row.schedule_pda)?;
+    if expected_pda != schedule_pda {
+        return Err(anyhow!(
+            "PDA mismatch: derived {} from seed {}, but DB has {}",
+            expected_pda,
+            created_at_seed,
+            schedule_pda
+        ));
+    }
 
     let token_prog = spl_token::id();
     let executor = &state.executor_keypair;
 
-    // 3. Derive ATAs
+    // 3. Derive recipient ATAs
     let mut wallets: Vec<Pubkey> = Vec::with_capacity(entries.len());
     let mut atas: Vec<Pubkey> = Vec::with_capacity(entries.len());
     let mut amounts: Vec<u64> = Vec::with_capacity(entries.len());
@@ -191,7 +218,7 @@ async fn execute_batch(
         amounts.push(entry.amount as u64);
     }
 
-    // 4. Pre-ATA pass
+    // 4. Pre-ATA pass: create any missing ATAs
     let ata_infos = state.rpc.get_multiple_accounts(&atas)?;
 
     let missing_ixs: Vec<Instruction> = atas
@@ -222,53 +249,7 @@ async fn execute_batch(
         }
     }
 
-    // 5. Derive schedule PDA from stored seed
-
-    let schedule_pda = Pubkey::from_str(&row.schedule_pda)?;
-
-    let program_id = Pubkey::from_str(
-        &std::env::var("PROGRAM_ID")
-            .unwrap_or_else(|_| "Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT".to_string()),
-    )?;
-
-    // Debug — verify the stored PDA exists on-chain
-    tracing::info!("Batch {} — using stored_pda: {}", batch_id, schedule_pda,);
-
-    if let Ok(response) = state.rpc.get_account_with_commitment(
-        &schedule_pda,
-        solana_sdk::commitment_config::CommitmentConfig::confirmed(),
-    ) {
-        if let Some(acc) = response.value {
-            // Read owner from account data (offset 8, after discriminator)
-            let on_chain_owner = Pubkey::try_from(&acc.data[8..40]).unwrap_or_default();
-
-            // Try both possible offsets for created_at
-            let created_at_at_73 =
-                i64::from_le_bytes(acc.data[73..81].try_into().unwrap_or([0u8; 8]));
-            let created_at_at_76 =
-                i64::from_le_bytes(acc.data[76..84].try_into().unwrap_or([0u8; 8]));
-
-            // After fetching the row, log both values
-            tracing::info!(
-                "DB created_at_seed: {:?}, on_chain_created_at@73: {}",
-                row.created_at_seed,
-                created_at_at_73,
-            );
-
-            tracing::info!(
-            "on_chain_owner: {}, executor_sender: {}, match: {}, created_at@73: {}, created_at@76: {}",
-            on_chain_owner,
-            sender,
-            on_chain_owner == sender,
-            created_at_at_73,
-            created_at_at_76,
-        );
-        }
-    }
-
-    // 6. Derive remaining PDAs
-    let (user_account_pda, _) =
-        Pubkey::find_program_address(&[b"useraccount", sender.as_ref()], &program_id);
+    // 5. Derive remaining PDAs
     let (transfer_log_pda, _) =
         Pubkey::find_program_address(&[b"transferlog", sender.as_ref()], &program_id);
     let (delegation_pda, _) = Pubkey::find_program_address(
@@ -280,7 +261,16 @@ async fn execute_batch(
 
     let sender_ata = get_associated_token_address_with_program_id(&sender, &mint, &token_prog);
 
-    // 7. Build account metas
+    tracing::info!(
+        "Building tx — batch: {}, executor: {}, sender: {}, schedule_pda: {}, created_at_seed: {}",
+        batch_id,
+        executor.pubkey(),
+        sender,
+        schedule_pda,
+        created_at_seed,
+    );
+
+    // 6. Build account metas
     let mut account_metas = vec![
         solana_sdk::instruction::AccountMeta::new(executor.pubkey(), true),
         solana_sdk::instruction::AccountMeta::new_readonly(sender, false),
@@ -302,7 +292,7 @@ async fn execute_batch(
         account_metas.push(solana_sdk::instruction::AccountMeta::new(*ata, false));
     }
 
-    // 8. Discriminator
+    // 7. Discriminator for "global:execute_schedule"
     let discriminator = {
         use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
@@ -311,13 +301,17 @@ async fn execute_batch(
         result[..8].to_vec()
     };
 
+    // ✅ Append explicit created_at seed as little-endian i64
+    let mut ix_data = discriminator;
+    ix_data.extend_from_slice(&created_at_seed.to_le_bytes());
+
     let ix = Instruction {
         program_id,
         accounts: account_metas,
-        data: discriminator,
+        data: ix_data,
     };
 
-    // 9. Send and confirm
+    // 8. Send and confirm
     let blockhash = state.rpc.get_latest_blockhash()?;
     let tx = Transaction::new_signed_with_payer(
         &[ix],
@@ -339,7 +333,6 @@ async fn execute_batch(
 
     Ok(sig.to_string())
 }
-
 // ── Compute next run timestamp ────────────────────────────────────────────────
 
 fn next_run_timestamp(
