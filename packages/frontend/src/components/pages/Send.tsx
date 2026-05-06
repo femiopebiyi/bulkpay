@@ -4,7 +4,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useWallet as useAdapterWallet } from "@solana/wallet-adapter-react";
 import { useToast } from "@/context/ToastContext";
 import { Recipient, BatchProgress } from "@/lib/types";
-import { fetchContacts, fetchDelegationStatus, registerDelegate, createSchedule, updateDelegate, fetchAllSchedules } from "@/lib/api";
+import { fetchContacts, createSchedule } from "@/lib/api";
 import { USDC_MINT, connection, checkAtaExists, isValidSolanaAddress, truncateAddress } from "@/lib/solana";
 import { preflightCheck, MAX_RECIPIENTS_PER_TX } from "@/lib/batch";
 import {
@@ -17,7 +17,7 @@ import { PublicKey, VersionedTransaction } from "@solana/web3.js";
 import { BulkPay } from "../../../../../shared/types/bulk_pay";
 import idl from "../../../../../shared/types/idl/bulk_pay.json";
 
-const PROGRAM_ID = new PublicKey("Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT");
+
 
 
 interface Props {
@@ -160,46 +160,21 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
 
       setBatchProgress((p) => p ? { ...p, phase: "checking-atas" } : p);
 
-      // Fetch delegation and all existing schedules
-      const delegation = await fetchDelegationStatus();
-      const existingSchedules = await fetchAllSchedules();
 
-      // Calculate new schedule's lifetime amount
       const totalPerRun = filled.reduce(
         (sum, r) => sum + Math.round(parseFloat(r.amount) * 1_000_000), 0
       );
-      const newScheduleLifetime = scheduleMaxRuns > 0
+      const maxAmount = scheduleMaxRuns > 0
         ? BigInt(totalPerRun) * BigInt(scheduleMaxRuns)
         : BigInt(totalPerRun) * BigInt(120);
 
-      // Calculate new schedule's last run date
-      const newScheduleLastRun = scheduleMaxRuns > 0
-        ? Math.floor(firstRunAt.getTime() / 1000) + scheduleMaxRuns * intervalSeconds(scheduleRecurrence)
-        : Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60;
-
-      // Calculate total lifetime across ALL schedules (existing + new)
-      const existingLifetimeTotal = existingSchedules.reduce((sum, s) => {
-        const runsRemaining = s.max_runs > 0 ? s.max_runs - s.runs_completed : 120;
-        const perRun = s.recipients.reduce((rSum, r) => rSum + r.amount, 0);
-        return sum + BigInt(perRun) * BigInt(runsRemaining);
-      }, 0n);
-
-      const totalLifetimeNeeded = existingLifetimeTotal + newScheduleLifetime;
-
-      // Calculate last run date across ALL schedules
-      const allLastRuns = [
-        ...existingSchedules.map(s => {
-          if (s.max_runs === 0) return Infinity;
-          if (!s.scheduled_at) return 0;
-          const firstRun = Math.floor(new Date(s.scheduled_at).getTime() / 1000);
-          return firstRun + s.max_runs * intervalSeconds(s.recurrence);
-        }),
-        newScheduleLastRun,
-      ];
-      const globalLastRunAt = Math.max(...allLastRuns.filter((x): x is number => typeof x === 'number'));
-      const newExpiresAt = globalLastRunAt + 604_800; // +7 day buffer
-
+      // ✅ GENERATE SEED ONCE HERE
       const createdAt = Math.floor(Date.now() / 1000);
+
+      const expiresAt = scheduleMaxRuns > 0
+        ? Math.floor(firstRunAt.getTime() / 1000) +
+        scheduleMaxRuns * intervalSeconds(scheduleRecurrence) + 604_800
+        : createdAt + 365 * 24 * 60 * 60; // use the same createdAt for consistency
 
       const params: ScheduleParams = {
         recipients: filled.map((r) => ({
@@ -216,64 +191,23 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
 
       setBatchProgress((p) => p ? { ...p, phase: "signing" } : p);
 
-      // Determine delegation action
-      let delegateParams: { maxAmount: bigint; expiresAt: number } | undefined;
-      let expandParams: { additionalAmount: bigint; newExpiresAt: number } | undefined;
-
-      if (!delegation.active) {
-        // No delegation exists — create new
-        delegateParams = { maxAmount: totalLifetimeNeeded, expiresAt: newExpiresAt };
-      } else {
-        const currentMaxAmount = delegation.max_amount ?? 0;
-        const additionalAmount = totalLifetimeNeeded > BigInt(currentMaxAmount)
-          ? totalLifetimeNeeded - BigInt(currentMaxAmount)
-          : 0n;
-
-        const currentExpiresAt = delegation.expires_at
-          ? Math.floor(new Date(delegation.expires_at).getTime() / 1000)
-          : 0;
-        const needsExpiryExtension = newExpiresAt > currentExpiresAt;
-
-        if (additionalAmount > 0n || needsExpiryExtension) {
-          expandParams = { additionalAmount, newExpiresAt };
-        }
-      }
-
-      // Call submitSchedule — it handles building all instructions and sending
+      // ✅ PASS THE SAME createdAt TO submitSchedule
       const { schedulePda, createdAt: confirmedCreatedAt } = await submitSchedule(
         program,
         sender,
         params,
         signAndSend,
-        delegation.active && !expandParams, // isDelegated: true only if active and no expansion needed
-        createdAt,
-        delegateParams,
-        expandParams,
+        createdAt, // ← same seed
+        maxAmount,
+        expiresAt,
       );
 
-      // Register or update delegation in DB
-      if (!delegation.active) {
-        const [schedulerAuthority] = PublicKey.findProgramAddressSync(
-          [Buffer.from("scheduler_authority")],
-          program.programId,
-        );
-        await registerDelegate({
-          delegate_pda: schedulerAuthority.toBase58(),
-          mint_address: USDC_MINT.toBase58(),
-          max_amount: Number(totalLifetimeNeeded),
-          expires_at: new Date(newExpiresAt * 1000).toISOString(),
-        });
-      } else if (expandParams) {
-        await updateDelegate({
-          max_amount: Number(totalLifetimeNeeded),
-          expires_at: new Date(newExpiresAt * 1000).toISOString(),
-        });
-      }
 
-      // Save schedule to DB
+
+      // ✅ SAVE THE EXACT SAME SEED TO DB
       await createSchedule({
         schedule_pda: schedulePda,
-        created_at_seed: confirmedCreatedAt,
+        created_at_seed: confirmedCreatedAt, // === createdAt
         mint_address: USDC_MINT.toBase58(),
         recipients: params.recipients,
         recurrence: params.recurrence,

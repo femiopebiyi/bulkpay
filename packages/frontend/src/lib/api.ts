@@ -1,5 +1,10 @@
+import { Connection, PublicKey } from "@solana/web3.js";
 import { authHeaders, getJwt } from "./auth";
 import { UserProfile, ScheduleRecord } from "./types";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { connection, USDC_MINT } from "./solana";
+import { Program } from "@coral-xyz/anchor";
+import { BulkPay } from "../../../../shared/types/bulk_pay";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 

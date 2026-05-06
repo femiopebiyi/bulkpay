@@ -24,6 +24,3 @@ pub use close_schedule::*;
 
 pub mod close_delegation;
 pub use close_delegation::*;
-
-pub mod expand_delegation;
-pub use expand_delegation::*;

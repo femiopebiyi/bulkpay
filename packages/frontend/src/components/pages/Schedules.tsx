@@ -32,19 +32,21 @@ export default function Schedules({ onNewSchedule }: { onNewSchedule: () => void
     setLoading(true);
     fetchSchedules()
       .then((data: any[]) => {
-        const mapped: ScheduleRecord[] = data.map((s) => ({
+        const mapped: ScheduleRecord[] = data.map((s: any) => ({
           id: s.id,
           schedule_pda: s.schedule_pda,
+          created_at_seed: s.created_at_seed ?? null,
           mint_address: s.mint_address,
+          recipients: s.recipients ?? [],
           recurrence: s.recurrence,
           scheduled_at: s.scheduled_at,
           status: s.status,
           runs_completed: s.runs_completed,
           max_runs: s.max_runs,
-          last_error: s.last_error,
-          tx_signature: s.tx_signature,
+          last_error: s.last_error ?? null,
+          tx_signature: s.tx_signature ?? null,
           created_at: s.created_at,
-          confirmed_at: s.confirmed_at,
+          confirmed_at: s.confirmed_at ?? null,
         }));
         setSchedules(mapped);
       })

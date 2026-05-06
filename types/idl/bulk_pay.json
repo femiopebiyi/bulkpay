@@ -428,6 +428,11 @@
               {
                 "kind": "account",
                 "path": "token_mint"
+              },
+              {
+                "kind": "account",
+                "path": "delegation_account.created_at",
+                "account": "DelegationAccount"
               }
             ]
           }
@@ -547,6 +552,10 @@
               {
                 "kind": "account",
                 "path": "token_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "created_at"
               }
             ]
           }
@@ -658,6 +667,10 @@
         {
           "name": "expires_at",
           "type": "i64"
+        },
+        {
+          "name": "created_at",
+          "type": "i64"
         }
       ]
     },
@@ -737,6 +750,10 @@
               {
                 "kind": "account",
                 "path": "token_mint"
+              },
+              {
+                "kind": "arg",
+                "path": "created_at"
               }
             ]
           }
@@ -1231,6 +1248,16 @@
       "code": 6022,
       "name": "BatchTooLarge",
       "msg": "Batch exceeds maximum of 35 recipients per transaction"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidExpiry",
+      "msg": "new expiry must be in the future"
+    },
+    {
+      "code": 6024,
+      "name": "ExpiryCannotDecrease",
+      "msg": "Expiry date cannot decrease"
     }
   ],
   "types": [
@@ -1262,6 +1289,10 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
           }
         ]
       }

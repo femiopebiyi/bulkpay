@@ -434,6 +434,11 @@ export type BulkPay = {
               {
                 "kind": "account",
                 "path": "tokenMint"
+              },
+              {
+                "kind": "account",
+                "path": "delegation_account.created_at",
+                "account": "delegationAccount"
               }
             ]
           }
@@ -553,6 +558,10 @@ export type BulkPay = {
               {
                 "kind": "account",
                 "path": "tokenMint"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
               }
             ]
           }
@@ -664,6 +673,10 @@ export type BulkPay = {
         {
           "name": "expiresAt",
           "type": "i64"
+        },
+        {
+          "name": "createdAt",
+          "type": "i64"
         }
       ]
     },
@@ -743,6 +756,10 @@ export type BulkPay = {
               {
                 "kind": "account",
                 "path": "tokenMint"
+              },
+              {
+                "kind": "arg",
+                "path": "createdAt"
               }
             ]
           }
@@ -1237,6 +1254,16 @@ export type BulkPay = {
       "code": 6022,
       "name": "batchTooLarge",
       "msg": "Batch exceeds maximum of 35 recipients per transaction"
+    },
+    {
+      "code": 6023,
+      "name": "invalidExpiry",
+      "msg": "new expiry must be in the future"
+    },
+    {
+      "code": 6024,
+      "name": "expiryCannotDecrease",
+      "msg": "Expiry date cannot decrease"
     }
   ],
   "types": [
@@ -1268,6 +1295,10 @@ export type BulkPay = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
           }
         ]
       }

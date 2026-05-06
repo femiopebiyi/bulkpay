@@ -40,7 +40,7 @@ pub struct ExecuteSchedule<'info> {
     pub schedule_account: Account<'info, ScheduleAccount>,
 
     #[account(
-    seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
+    seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref(), &created_at.to_le_bytes()],
     bump   = delegation_account.bump,
     constraint = delegation_account.is_active     @ BulkTransferError::DelegationInactive,
     constraint = delegation_account.expires_at > Clock::get()?.unix_timestamp  @ BulkTransferError::DelegationExpired,

@@ -52,4 +52,5 @@ pub struct DelegationAccount {
     pub expires_at: i64, // unix timestamp — delegation auto-expires
     pub is_active: bool,
     pub bump: u8,
+    pub created_at: i64,
 }

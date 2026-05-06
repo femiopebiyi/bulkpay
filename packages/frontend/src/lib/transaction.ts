@@ -372,33 +372,26 @@ function discriminator(name: string): Buffer {
 export async function buildDelegateIx(
     program: Program<BulkPay>,
     sender: PublicKey,
-    maxAmount: bigint,   // in base units
-    expiresAt: number,   // unix timestamp
+    maxAmount: bigint,
+    expiresAt: number,
+    createdAt: number,
 ): Promise<TransactionInstruction> {
-    const [delegationAccount] = PublicKey.findProgramAddressSync(
-        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer()],
-        program.programId,
-    );
-
     const [schedulerAuthority] = PublicKey.findProgramAddressSync(
         [Buffer.from("scheduler_authority")],
         program.programId,
     );
-
-    const senderAta = getAssociatedTokenAddressSync(
-        USDC_MINT, sender, false, TOKEN_PROGRAM_ID
-    );
+    const senderAta = getAssociatedTokenAddressSync(USDC_MINT, sender, false, TOKEN_PROGRAM_ID);
 
     return program.methods
-        .delegate(new BN(maxAmount.toString()), new BN(expiresAt))
+        .delegate(new BN(maxAmount.toString()), new BN(expiresAt), new BN(createdAt))
         .accountsPartial({
             sender,
-            delegationAccount,
             senderAta,
             schedulerAuthority,
             tokenMint: USDC_MINT,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
+            // ✅ delegationAccount removed — Anchor auto-derives from IDL arg seed
         })
         .instruction();
 }
@@ -409,52 +402,44 @@ export async function buildCreateScheduleIx(
     program: Program<BulkPay>,
     sender: PublicKey,
     params: ScheduleParams,
-    createdAt: number, // unix timestamp — used as PDA seed
+    createdAt: number,
 ): Promise<{ ix: TransactionInstruction; schedulePda: PublicKey }> {
-    const [delegationAccount] = PublicKey.findProgramAddressSync(
-        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer()],
-        program.programId,
-    );
-
-    // Derive schedule PDA using createdAt as seed — must match on-chain derivation
     const createdAtBuf = Buffer.alloc(8);
     createdAtBuf.writeBigInt64LE(BigInt(createdAt));
 
+    // ✅ Must pass explicitly — IDL seed reads from account data, not arg
+    const [delegationAccount] = PublicKey.findProgramAddressSync(
+        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer(), createdAtBuf],
+        program.programId,
+    );
+
+    // ✅ Needed to return schedulePda to the caller
     const [scheduleAccount] = PublicKey.findProgramAddressSync(
         [Buffer.from("schedule"), sender.toBuffer(), createdAtBuf],
         program.programId,
     );
 
-    // Map recipients to on-chain ScheduledRecipient format
     const onChainRecipients = params.recipients.map((r) => ({
         wallet: new PublicKey(r.wallet),
         amount: new BN(r.amount),
     }));
 
-    // Map recurrence string to on-chain enum variant
     const recurrenceEnum = {
-        once: { once: {} },
-        daily: { daily: {} },
-        weekly: { weekly: {} },
+        once:    { once: {} },
+        daily:   { daily: {} },
+        weekly:  { weekly: {} },
         monthly: { monthly: {} },
     }[params.recurrence];
 
     const firstRunAt = new BN(Math.floor(params.firstRunAt.getTime() / 1000));
-    const maxRuns = params.maxRuns;
 
     const ix = await program.methods
-        .createSchedule(
-            onChainRecipients,
-            recurrenceEnum,
-            firstRunAt,
-            maxRuns,
-            new BN(createdAt),
-        )
+        .createSchedule(onChainRecipients, recurrenceEnum, firstRunAt, params.maxRuns, new BN(createdAt))
         .accountsPartial({
             sender,
             tokenMint: USDC_MINT,
-            delegationAccount,
-            scheduleAccount,
+            delegationAccount,          // ✅ must pass — cannot be auto-derived
+            // scheduleAccount removed  — Anchor auto-derives from arg seed
             systemProgram: SystemProgram.programId,
             tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -469,28 +454,20 @@ export async function submitSchedule(
     sender: PublicKey,
     params: ScheduleParams,
     signAndSend: (tx: VersionedTransaction) => Promise<string>,
-    isDelegated: boolean,
     createdAt: number,
-    delegateParams?: { maxAmount: bigint; expiresAt: number },
-    expandParams?: { additionalAmount: bigint; newExpiresAt: number },
+    maxAmount: bigint,
+    expiresAt: number,
 ): Promise<{ schedulePda: string; createdAt: number }> {
     const ixs: TransactionInstruction[] = [];
 
-    if (!isDelegated && delegateParams) {
-        const delegateIx = await buildDelegateIx(
-            program, sender, delegateParams.maxAmount, delegateParams.expiresAt,
-        );
-        ixs.push(delegateIx);
-    }
 
-    if (expandParams && expandParams.additionalAmount > 0n) {
-        const expandIx = await buildExpandDelegationIx(
-            program, sender, expandParams.additionalAmount, expandParams.newExpiresAt,
-        );
-        ixs.push(expandIx);
-    }
+    // Always delegate — each schedule gets its own DelegationAccount
+    const delegateIx = await buildDelegateIx(
+        program, sender, maxAmount, expiresAt, createdAt,
+    );
+    ixs.push(delegateIx);
 
-    const { ix: scheduleIx, schedulePda: tentativePda } = await buildCreateScheduleIx(
+    const { ix: scheduleIx, schedulePda } = await buildCreateScheduleIx(
         program, sender, params, createdAt,
     );
     ixs.push(scheduleIx);
@@ -498,60 +475,24 @@ export async function submitSchedule(
     const { blockhash, lastValidBlockHeight } =
         await connection.getLatestBlockhash("confirmed");
 
-    const message = new TransactionMessage({
-        payerKey: sender,
-        recentBlockhash: blockhash,
-        instructions: ixs,
-    }).compileToV0Message();
+    const tx = new VersionedTransaction(
+        new TransactionMessage({
+            payerKey: sender,
+            recentBlockhash: blockhash,
+            instructions: ixs,
+        }).compileToV0Message()
+    );
 
-    const tx = new VersionedTransaction(message);
     const sig = await signAndSend(tx);
-
     await connection.confirmTransaction(
         { signature: sig, blockhash, lastValidBlockHeight },
         "confirmed"
     );
 
-    const accountInfo = await connection.getAccountInfo(tentativePda, "confirmed");
+    const accountInfo = await connection.getAccountInfo(schedulePda, "confirmed");
     if (!accountInfo || !accountInfo.owner.equals(program.programId)) {
         throw new Error("Schedule account not found at expected PDA");
     }
 
-    return {
-        schedulePda: tentativePda.toBase58(),
-        createdAt,
-    };
-}
-
-export async function buildExpandDelegationIx(
-    program: Program<BulkPay>,
-    sender: PublicKey,
-    additionalAmount: bigint,
-    newExpiresAt: number,
-): Promise<TransactionInstruction> {
-    const [delegationAccount] = PublicKey.findProgramAddressSync(
-        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer()],
-        program.programId,
-    );
-
-    const [schedulerAuthority] = PublicKey.findProgramAddressSync(
-        [Buffer.from("scheduler_authority")],
-        program.programId,
-    );
-
-    const senderAta = getAssociatedTokenAddressSync(
-        USDC_MINT, sender, false, TOKEN_PROGRAM_ID
-    );
-
-    return program.methods
-        .expandDelegation(new BN(additionalAmount.toString()), new BN(newExpiresAt))
-        .accountsPartial({
-            sender,
-            delegationAccount,
-            senderAta,
-            schedulerAuthority,
-            tokenMint: USDC_MINT,
-            tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .instruction();
+    return { schedulePda: schedulePda.toBase58(), createdAt };
 }

@@ -19,7 +19,6 @@ pub fn router() -> Router<AppState> {
             "/delegate",
             get(check_delegate)
                 .post(register_delegate)
-                .patch(update_delegate)
                 .delete(revoke_delegate),
         )
 }
@@ -35,12 +34,6 @@ pub struct DelegationStatus {
 pub struct RegisterDelegateRequest {
     pub delegate_pda: String,
     pub mint_address: String,
-    pub max_amount: i64,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateDelegateRequest {
     pub max_amount: i64,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
@@ -144,37 +137,6 @@ pub async fn register_delegate(
     .execute(&state.db)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn update_delegate(
-    State(state): State<AppState>,
-    AuthUser(wallet): AuthUser,
-    Json(body): Json<UpdateDelegateRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let result = sqlx::query!(
-        "UPDATE scheduler_delegations
-         SET max_amount = $1,
-             expires_at = $2,
-             is_active  = true,
-             revoked_at = NULL
-         WHERE sender_pubkey = $3
-           AND is_active     = true",
-        body.max_amount,
-        body.expires_at,
-        wallet,
-    )
-    .execute(&state.db)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if result.rows_affected() == 0 {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "No active delegation found to update".to_string(),
-        ));
-    }
 
     Ok(StatusCode::NO_CONTENT)
 }

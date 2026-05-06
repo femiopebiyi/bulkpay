@@ -1,5 +1,5 @@
 use sha2::Digest;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{program_pack::Pack, pubkey::Pubkey};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -177,6 +177,16 @@ async fn execute_batch(
             .unwrap_or_else(|_| "Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT".to_string()),
     )?;
 
+    let (scheduler_authority, scheduler_bump) =
+        Pubkey::find_program_address(&[b"scheduler_authority"], &program_id);
+
+    tracing::info!(
+        "scheduler_authority PDA: {}, bump: {}, program_id: {}",
+        scheduler_authority,
+        scheduler_bump,
+        program_id
+    );
+
     let mint = Pubkey::from_str(&row.mint_address)?;
     let sender = Pubkey::from_str(&row.sender_pubkey)?;
     let created_at_seed = row
@@ -218,6 +228,62 @@ async fn execute_batch(
         amounts.push(entry.amount as u64);
     }
 
+    // After deriving recipient ATAs, verify each one exists and has correct owner/mint
+    for (i, entry) in entries.iter().enumerate() {
+        let wallet = Pubkey::from_str(&entry.wallet)
+            .map_err(|_| anyhow!("Invalid wallet: {}", entry.wallet))?;
+        let ata = atas[i];
+
+        match state.rpc.get_account(&ata) {
+            Ok(acc) => {
+                let token_account = spl_token::state::Account::unpack(&acc.data).map_err(|e| {
+                    anyhow!(
+                        "Invalid token account data at recipient ATA {} ({}): {}",
+                        ata,
+                        wallet,
+                        e
+                    )
+                })?;
+
+                tracing::info!(
+                "recipient_ata[{}] check — ata: {}, owner: {}, mint: {}, expected_wallet: {}, expected_mint: {}",
+                i, ata, token_account.owner, token_account.mint, wallet, mint
+            );
+
+                if token_account.owner != wallet {
+                    return Err(anyhow!(
+                        "recipient_ata[{}] owner mismatch: ata={}, expected {} (wallet), got {}. \
+                     This ATA was created for a different wallet.",
+                        i,
+                        ata,
+                        wallet,
+                        token_account.owner
+                    ));
+                }
+
+                if token_account.mint != mint {
+                    return Err(anyhow!(
+                        "recipient_ata[{}] mint mismatch: ata={}, expected {}, got {}",
+                        i,
+                        ata,
+                        mint,
+                        token_account.mint
+                    ));
+                }
+            }
+            Err(e) => {
+                return Err(anyhow!(
+                    "recipient_ata[{}] does not exist: ata={}, wallet={}, mint={}, error={}",
+                    i,
+                    ata,
+                    wallet,
+                    mint,
+                    e
+                ));
+            }
+        }
+    }
+
     // 4. Pre-ATA pass: create any missing ATAs
     let ata_infos = state.rpc.get_multiple_accounts(&atas)?;
 
@@ -253,13 +319,57 @@ async fn execute_batch(
     let (transfer_log_pda, _) =
         Pubkey::find_program_address(&[b"transferlog", sender.as_ref()], &program_id);
     let (delegation_pda, _) = Pubkey::find_program_address(
-        &[b"delegation", sender.as_ref(), mint.as_ref()],
+        &[
+            b"delegation",
+            sender.as_ref(),
+            mint.as_ref(),
+            &created_at_bytes,
+        ],
         &program_id,
     );
     let (scheduler_authority, _) =
         Pubkey::find_program_address(&[b"scheduler_authority"], &program_id);
 
     let sender_ata = get_associated_token_address_with_program_id(&sender, &mint, &token_prog);
+
+    // Verify sender_ata exists and is owned by sender
+    let acc = state.rpc.get_account(&sender_ata).map_err(|e| {
+        anyhow!(
+            "sender_ata does not exist or RPC error: {}. \
+         address={}, wallet={}, mint={}, token_program={}",
+            e,
+            sender_ata,
+            sender,
+            mint,
+            token_prog
+        )
+    })?;
+
+    // Now acc is Account (unwrapped from Result)
+    let token_account = spl_token::state::Account::unpack(&acc.data)
+        .map_err(|e| anyhow!("Invalid token account data at {}: {}", sender_ata, e))?;
+
+    tracing::info!(
+    "sender_ata check — address: {}, owner: {}, mint: {}, expected_sender: {}, expected_mint: {}",
+    sender_ata, token_account.owner, token_account.mint, sender, mint
+);
+
+    if token_account.owner != sender {
+        return Err(anyhow!(
+            "sender_ata owner mismatch: expected {} (sender), got {}. \
+         The ATA was created for a different wallet.",
+            sender,
+            token_account.owner
+        ));
+    }
+
+    if token_account.mint != mint {
+        return Err(anyhow!(
+            "sender_ata mint mismatch: expected {}, got {}",
+            mint,
+            token_account.mint
+        ));
+    }
 
     tracing::info!(
         "Building tx — batch: {}, executor: {}, sender: {}, schedule_pda: {}, created_at_seed: {}",

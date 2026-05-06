@@ -17,7 +17,7 @@ pub struct CreateSchedule<'info> {
     pub token_mint: InterfaceAccount<'info, Mint>,
 
     #[account(
-        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref()],
+        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref(), &delegation_account.created_at.to_le_bytes()],
         bump   = delegation_account.bump,
         constraint = delegation_account.owner     == sender.key()    @ BulkTransferError::Unauthorized,
         constraint = delegation_account.is_active == true             @ BulkTransferError::DelegationInactive,
