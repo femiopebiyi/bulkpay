@@ -72,7 +72,7 @@ pub mod bulk_pay {
         instructions::close_schedule::close_schedule(ctx)
     }
 
-    pub fn close_delegation(ctx: Context<CloseDelegation>) -> Result<()> {
-        instructions::close_delegation::close_delegation(ctx)
-    }
+    // pub fn close_delegation(ctx: Context<CloseDelegation>) -> Result<()> {
+    //     instructions::close_delegation::close_delegation(ctx)
+    // }
 }

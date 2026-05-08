@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 use crate::{auth::AuthUser, AppState};
 
+use chrono::{TimeZone, Utc};
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/schedules", get(list).post(create))
@@ -35,7 +37,8 @@ pub struct RegisterDelegateRequest {
     pub delegate_pda: String,
     pub mint_address: String,
     pub max_amount: i64,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: i64,
+    pub created_at_seed: i64, // ← accept this
 }
 
 #[derive(Deserialize)]
@@ -43,6 +46,7 @@ pub struct CreateScheduleRequest {
     pub schedule_pda: String,
     pub created_at_seed: i64,
     pub mint_address: String,
+    pub delegate_pda: String, // ← NEW
     pub recipients: Vec<ScheduledRecipientInput>,
     pub recurrence: String,
     pub scheduled_at: chrono::DateTime<chrono::Utc>,
@@ -117,22 +121,21 @@ pub async fn register_delegate(
     AuthUser(wallet): AuthUser,
     Json(body): Json<RegisterDelegateRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    let expires_at = Utc.timestamp_opt(body.expires_at, 0).single().ok_or((
+        StatusCode::BAD_REQUEST,
+        "Invalid expires_at timestamp".to_string(),
+    ))?;
+
     sqlx::query!(
         "INSERT INTO scheduler_delegations
-             (sender_pubkey, delegate_pda, mint_address, max_amount, expires_at, is_active)
-         VALUES ($1, $2, $3, $4, $5, true)
-         ON CONFLICT (sender_pubkey, mint_address)
-         DO UPDATE SET
-             delegate_pda = EXCLUDED.delegate_pda,
-             max_amount   = EXCLUDED.max_amount,
-             expires_at   = EXCLUDED.expires_at,
-             is_active    = true,
-             revoked_at   = NULL",
+     (sender_pubkey, delegate_pda, mint_address, max_amount, expires_at, is_active, created_at_seed)
+     VALUES ($1, $2, $3, $4, $5, true, $6)",
         wallet,
         body.delegate_pda,
         body.mint_address,
         body.max_amount,
-        body.expires_at,
+        expires_at, // ← DateTime<Utc> binds directly to TIMESTAMPTZ
+        body.created_at_seed,
     )
     .execute(&state.db)
     .await
@@ -196,10 +199,12 @@ pub async fn create(
 
     let delegation = sqlx::query!(
         "SELECT id FROM scheduler_delegations
-         WHERE sender_pubkey = $1
-           AND mint_address  = $2
-           AND is_active     = true
-           AND expires_at    > now()",
+     WHERE delegate_pda = $1
+       AND sender_pubkey = $2
+       AND mint_address  = $3
+       AND is_active     = true
+       AND expires_at    > now()",
+        body.delegate_pda,
         wallet,
         body.mint_address,
     )
@@ -208,7 +213,7 @@ pub async fn create(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .ok_or((
         StatusCode::FORBIDDEN,
-        "No active delegation found — call /delegate/instruction first".to_string(),
+        "Delegation not found or expired — register it first".to_string(),
     ))?;
 
     let recipients_json = serde_json::to_value(&body.recipients)

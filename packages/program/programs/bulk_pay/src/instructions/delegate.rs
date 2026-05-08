@@ -7,19 +7,19 @@ use crate::{errors::BulkTransferError, state::DelegationAccount};
 pub const SCHEDULER_AUTHORITY_SEED: &[u8] = b"scheduler_authority";
 
 #[derive(Accounts)]
-#[instruction(created_at: i64)]
+#[instruction(max_amount: u64, expires_at: i64, created_at: i64)] // ← all three, in order
 pub struct Delegate<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
 
     #[account(
-    init, 
-    payer = sender,
-    space = 8 + DelegationAccount::INIT_SPACE,
-    seeds = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref(), &created_at.to_le_bytes()],
-    bump
-)]
-pub delegation_account: Account<'info, DelegationAccount>,
+        init,
+        payer  = sender,
+        space  = 8 + DelegationAccount::INIT_SPACE,
+        seeds  = [b"delegation", sender.key().as_ref(), token_mint.key().as_ref(), &created_at.to_le_bytes()],
+        bump
+    )]
+    pub delegation_account: Account<'info, DelegationAccount>,
 
     #[account(
         mut,
@@ -45,7 +45,7 @@ pub fn delegate(
     ctx: Context<Delegate>,
     max_amount: u64,
     expires_at: i64, // unix timestamp — frontend passes e.g. now + 30 days
-    created_at: i64 
+    created_at: i64,
 ) -> Result<()> {
     let clock = Clock::get()?;
 

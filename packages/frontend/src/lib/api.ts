@@ -125,7 +125,8 @@ export async function registerDelegate(body: {
     delegate_pda: string;
     mint_address: string;
     max_amount: number;
-    expires_at: string;
+    expires_at: number;   // unix timestamp
+    created_at_seed: number;
 }): Promise<void> {
     const res = await fetch(`${BASE_URL}/delegate`, {
         method: "POST",
@@ -139,6 +140,7 @@ export async function createSchedule(body: {
     schedule_pda: string;
     created_at_seed: number;
     mint_address: string;
+    delegate_pda: string;
     recipients: { wallet: string; amount: number; name?: string; description?: string }[];
     recurrence: string;
     scheduled_at: string;

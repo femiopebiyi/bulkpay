@@ -4,7 +4,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useWallet as useAdapterWallet } from "@solana/wallet-adapter-react";
 import { useToast } from "@/context/ToastContext";
 import { Recipient, BatchProgress } from "@/lib/types";
-import { fetchContacts, createSchedule } from "@/lib/api";
+import { fetchContacts, createSchedule, registerDelegate } from "@/lib/api";
 import { USDC_MINT, connection, checkAtaExists, isValidSolanaAddress, truncateAddress } from "@/lib/solana";
 import { preflightCheck, MAX_RECIPIENTS_PER_TX } from "@/lib/batch";
 import {
@@ -192,23 +192,26 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
       setBatchProgress((p) => p ? { ...p, phase: "signing" } : p);
 
       // ✅ PASS THE SAME createdAt TO submitSchedule
-      const { schedulePda, createdAt: confirmedCreatedAt } = await submitSchedule(
-        program,
-        sender,
-        params,
-        signAndSend,
-        createdAt, // ← same seed
-        maxAmount,
-        expiresAt,
+      const { schedulePda, delegationPda, createdAt: confirmedCreatedAt } = await submitSchedule(
+        program, sender, params, signAndSend, createdAt, maxAmount, expiresAt,
       );
+
+      await registerDelegate({
+        delegate_pda: delegationPda,
+        mint_address: USDC_MINT.toBase58(),
+        max_amount: Number(maxAmount),
+        expires_at: expiresAt,
+        created_at_seed: confirmedCreatedAt,
+      });
 
 
 
       // ✅ SAVE THE EXACT SAME SEED TO DB
       await createSchedule({
         schedule_pda: schedulePda,
-        created_at_seed: confirmedCreatedAt, // === createdAt
+        created_at_seed: confirmedCreatedAt,
         mint_address: USDC_MINT.toBase58(),
+        delegate_pda: delegationPda,          // ← pass this
         recipients: params.recipients,
         recurrence: params.recurrence,
         scheduled_at: firstRunAt.toISOString(),

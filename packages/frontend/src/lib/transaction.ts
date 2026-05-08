@@ -380,6 +380,14 @@ export async function buildDelegateIx(
         [Buffer.from("scheduler_authority")],
         program.programId,
     );
+
+    const createdAtBuf = Buffer.alloc(8);
+    createdAtBuf.writeBigInt64LE(BigInt(createdAt));
+
+    const [delegationAccount] = PublicKey.findProgramAddressSync(
+        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer(), createdAtBuf],
+        program.programId,
+    );
     const senderAta = getAssociatedTokenAddressSync(USDC_MINT, sender, false, TOKEN_PROGRAM_ID);
 
     return program.methods
@@ -391,6 +399,7 @@ export async function buildDelegateIx(
             tokenMint: USDC_MINT,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
+            delegationAccount
             // ✅ delegationAccount removed — Anchor auto-derives from IDL arg seed
         })
         .instruction();
@@ -425,9 +434,9 @@ export async function buildCreateScheduleIx(
     }));
 
     const recurrenceEnum = {
-        once:    { once: {} },
-        daily:   { daily: {} },
-        weekly:  { weekly: {} },
+        once: { once: {} },
+        daily: { daily: {} },
+        weekly: { weekly: {} },
         monthly: { monthly: {} },
     }[params.recurrence];
 
@@ -439,7 +448,7 @@ export async function buildCreateScheduleIx(
             sender,
             tokenMint: USDC_MINT,
             delegationAccount,          // ✅ must pass — cannot be auto-derived
-            // scheduleAccount removed  — Anchor auto-derives from arg seed
+            scheduleAccount,// scheduleAccount removed  — Anchor auto-derives from arg seed
             systemProgram: SystemProgram.programId,
             tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -457,9 +466,16 @@ export async function submitSchedule(
     createdAt: number,
     maxAmount: bigint,
     expiresAt: number,
-): Promise<{ schedulePda: string; createdAt: number }> {
+): Promise<{ schedulePda: string; delegationPda: string; createdAt: number }> {
     const ixs: TransactionInstruction[] = [];
 
+    const createdAtBuf = Buffer.alloc(8);
+    createdAtBuf.writeBigInt64LE(BigInt(createdAt));
+
+    const [delegationPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("delegation"), sender.toBuffer(), USDC_MINT.toBuffer(), createdAtBuf],
+        program.programId,
+    );
 
     // Always delegate — each schedule gets its own DelegationAccount
     const delegateIx = await buildDelegateIx(
@@ -494,5 +510,5 @@ export async function submitSchedule(
         throw new Error("Schedule account not found at expected PDA");
     }
 
-    return { schedulePda: schedulePda.toBase58(), createdAt };
+    return { schedulePda: schedulePda.toBase58(), delegationPda: delegationPda.toBase58(), createdAt };
 }

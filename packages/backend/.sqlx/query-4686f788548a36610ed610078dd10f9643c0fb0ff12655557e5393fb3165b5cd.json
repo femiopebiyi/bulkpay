@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO scheduler_delegations\n     (sender_pubkey, delegate_pda, mint_address, max_amount, expires_at, is_active, created_at_seed)\n     VALUES ($1, $2, $3, $4, $5, true, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4686f788548a36610ed610078dd10f9643c0fb0ff12655557e5393fb3165b5cd"
+}
