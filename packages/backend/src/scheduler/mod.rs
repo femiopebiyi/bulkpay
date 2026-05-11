@@ -267,6 +267,9 @@ async fn execute_batch(
         ],
         &program_id,
     );
+
+    let (user_account_pda, _) =
+        Pubkey::find_program_address(&[b"useraccount", sender.as_ref()], &program_id);
     let (scheduler_authority, _) =
         Pubkey::find_program_address(&[b"scheduler_authority"], &program_id);
 
@@ -309,6 +312,7 @@ async fn execute_batch(
         solana_sdk::instruction::AccountMeta::new_readonly(sender, false),
         solana_sdk::instruction::AccountMeta::new(schedule_pda, false),
         solana_sdk::instruction::AccountMeta::new_readonly(delegation_pda, false),
+        solana_sdk::instruction::AccountMeta::new(user_account_pda, false),
         solana_sdk::instruction::AccountMeta::new(sender_ata, false),
         solana_sdk::instruction::AccountMeta::new(transfer_log_pda, false),
         solana_sdk::instruction::AccountMeta::new_readonly(mint, false),

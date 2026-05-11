@@ -9,7 +9,9 @@ use anchor_spl::{
 use crate::{
     errors::BulkTransferError,
     instructions::delegate::SCHEDULER_AUTHORITY_SEED,
-    state::{DelegationAccount, Recurrence, ScheduleAccount, TransferLog, TransferRecord},
+    state::{
+        DelegationAccount, Recurrence, ScheduleAccount, TransferLog, TransferRecord, UserAccount,
+    },
 };
 
 #[derive(Accounts)]
@@ -47,6 +49,14 @@ pub struct ExecuteSchedule<'info> {
     constraint = delegation_account.mint == schedule_account.mint    @ BulkTransferError::InvalidMint, // ✅ add this
 )]
     pub delegation_account: Account<'info, DelegationAccount>,
+
+    #[account(
+        mut,
+        seeds      = [b"useraccount", sender.key().as_ref()],
+        bump       = user_account.bump,
+        constraint = user_account.owner == sender.key() @ BulkTransferError::Unauthorized
+    )]
+    pub user_account: Account<'info, UserAccount>,
 
     #[account(
         mut,
@@ -178,6 +188,13 @@ pub fn execute_schedule<'info>(
                 .ok_or(BulkTransferError::Overflow)?,
             timestamp: clock.unix_timestamp,
         });
+
+        ctx.accounts.user_account.all_time_amount_sent = ctx
+            .accounts
+            .user_account
+            .all_time_amount_sent
+            .checked_add(recipient.amount)
+            .ok_or(BulkTransferError::Overflow)?;
     }
 
     // All transfers succeeded — flush staged records atomically

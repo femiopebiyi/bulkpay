@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n    SELECT COUNT(*)::int FROM (\n        SELECT bi.wallet_pubkey AS wallet\n        FROM batch_items bi\n        JOIN batches b ON b.id = bi.batch_id\n        WHERE b.sender_pubkey = $1\n          AND b.status = 'confirmed'\n\n        UNION\n\n        SELECT recipient->>'wallet' AS wallet\n        FROM scheduled_batches sb,\n             jsonb_array_elements(sb.recipients) AS recipient\n        WHERE sb.sender_pubkey = $1\n          AND sb.runs_completed > 0\n    ) AS unique_recipients\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "332f9520a1418a78a6d362b9bb3d92815c92e829b0aed4472785616c34ea41c5"
+}

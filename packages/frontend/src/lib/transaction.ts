@@ -210,6 +210,8 @@ export async function ensureAccountsExist(
         program.programId,
     );
 
+    console.log(userAccountPda);
+
     const [userAccountInfo, transferLogInfo] = await Promise.all([
         connection.getAccountInfo(userAccountPda),
         connection.getAccountInfo(transferLogPda),

@@ -90,11 +90,23 @@ pub async fn get_user(
 
     // 5. Count total recipients across all batches
     let total_recipients = sqlx::query_scalar!(
-        "SELECT COUNT(DISTINCT bi.wallet_pubkey)
-     FROM batch_items bi
-     JOIN batches b ON b.id = bi.batch_id
-     WHERE b.sender_pubkey = $1
-       AND b.status = 'confirmed'",
+        r#"
+    SELECT COUNT(*)::int FROM (
+        SELECT bi.wallet_pubkey AS wallet
+        FROM batch_items bi
+        JOIN batches b ON b.id = bi.batch_id
+        WHERE b.sender_pubkey = $1
+          AND b.status = 'confirmed'
+
+        UNION
+
+        SELECT recipient->>'wallet' AS wallet
+        FROM scheduled_batches sb,
+             jsonb_array_elements(sb.recipients) AS recipient
+        WHERE sb.sender_pubkey = $1
+          AND sb.runs_completed > 0
+    ) AS unique_recipients
+    "#,
         wallet,
     )
     .fetch_one(&state.db)
@@ -119,7 +131,7 @@ pub async fn get_user(
         display_name: user_row.map(|r| r.display_name).flatten(),
         all_time_sent,
         total_batches: total_batches,
-        total_recipients: total_recipients,
+        total_recipients: total_recipients as i64,
         active_schedules: active_schedules,
     }))
 }
