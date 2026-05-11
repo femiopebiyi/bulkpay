@@ -39,8 +39,6 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("RPC_URL").unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     let port = std::env::var("PORT").unwrap_or_else(|_| "3001".to_string());
-    let executor_keypair_path =
-        std::env::var("EXECUTOR_KEYPAIR_PATH").expect("EXECUTOR_KEYPAIR_PATH must be set");
 
     let db = db::connect(&database_url).await?;
     tracing::info!("Database connected");
@@ -48,32 +46,45 @@ async fn main() -> anyhow::Result<()> {
     let rpc = Arc::new(solana_client::rpc_client::RpcClient::new(rpc_url));
     tracing::info!("RPC client initialised");
 
-    let executor_keypair_bytes: Vec<u8> = {
-        let json = std::fs::read_to_string(&executor_keypair_path)
-            .unwrap_or_else(|_| panic!("Could not read keypair file at {executor_keypair_path}"));
-        let byte_array: Vec<u8> =
-            serde_json::from_str(&json).expect("Keypair file must be a JSON array of bytes");
-        byte_array
-    };
+    // ── Executor keypair ─────────────────────────────────────────────────────────
 
     let executor_keypair = Arc::new(
-        Keypair::try_from(executor_keypair_bytes.as_slice())
-            .expect("Invalid keypair bytes in executor keypair file"),
+        if let Ok(json_str) = std::env::var("EXECUTOR_KEYPAIR_JSON") {
+            let bytes: Vec<u8> = serde_json::from_str(&json_str)
+                .expect("EXECUTOR_KEYPAIR_JSON must be a valid JSON array of bytes");
+            Keypair::try_from(bytes.as_slice())
+                .expect("Invalid keypair bytes in EXECUTOR_KEYPAIR_JSON")
+        } else {
+            let path = std::env::var("EXECUTOR_KEYPAIR_PATH")
+                .expect("EXECUTOR_KEYPAIR_JSON or EXECUTOR_KEYPAIR_PATH must be set");
+            let json = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("Could not read keypair file at {path}"));
+            let bytes: Vec<u8> =
+                serde_json::from_str(&json).expect("Keypair file must be a JSON array of bytes");
+            Keypair::try_from(bytes.as_slice())
+                .expect("Invalid keypair bytes in executor keypair file")
+        },
     );
     tracing::info!("Executor keypair loaded: {}", executor_keypair.pubkey());
 
-    let mint_authority_path = std::env::var("MINT_AUTHORITY_KEYPAIR_PATH")
-        .expect("MINT_AUTHORITY_KEYPAIR_PATH must be set");
+    // ── Mint authority keypair ───────────────────────────────────────────────────
 
-    let mint_authority_keypair = Arc::new({
-        let json = std::fs::read_to_string(&mint_authority_path).unwrap_or_else(|_| {
-            panic!("Could not read mint authority keypair at {mint_authority_path}")
-        });
-        let bytes: Vec<u8> =
-            serde_json::from_str(&json).expect("Mint authority keypair must be a JSON byte array");
-        Keypair::try_from(bytes.as_slice()).expect("Invalid mint authority keypair")
-    });
-
+    let mint_authority_keypair = Arc::new(
+        if let Ok(json_str) = std::env::var("MINT_AUTHORITY_KEYPAIR_JSON") {
+            let bytes: Vec<u8> = serde_json::from_str(&json_str)
+                .expect("MINT_AUTHORITY_KEYPAIR_JSON must be a valid JSON array of bytes");
+            Keypair::try_from(bytes.as_slice())
+                .expect("Invalid keypair bytes in MINT_AUTHORITY_KEYPAIR_JSON")
+        } else {
+            let path = std::env::var("MINT_AUTHORITY_KEYPAIR_PATH")
+                .expect("MINT_AUTHORITY_KEYPAIR_JSON or MINT_AUTHORITY_KEYPAIR_PATH must be set");
+            let json = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("Could not read mint authority keypair at {path}"));
+            let bytes: Vec<u8> = serde_json::from_str(&json)
+                .expect("Mint authority keypair must be a JSON byte array");
+            Keypair::try_from(bytes.as_slice()).expect("Invalid mint authority keypair")
+        },
+    );
     tracing::info!("Mint authority loaded: {}", mint_authority_keypair.pubkey());
 
     let state = AppState {
