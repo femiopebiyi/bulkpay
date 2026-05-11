@@ -1,8 +1,8 @@
 [build]
 builder = "nixpacks"
+buildCommand = "cd packages/backend && cargo build --release"
 
 [deploy]
-startCommand = "cargo run --release"
+startCommand = "cd packages/backend && cargo run --release"
 healthcheckPath = "/health"
-healthcheckTimeout = 100
 restartPolicy = "on-failure"
