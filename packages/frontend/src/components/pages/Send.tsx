@@ -111,7 +111,7 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("09:00");
   const [scheduleRecurrence, setScheduleRecurrence] = useState<"once" | "daily" | "weekly" | "monthly">("once");
-  const [scheduleMaxRuns, setScheduleMaxRuns] = useState(0);
+  const [scheduleMaxRuns, setScheduleMaxRuns] = useState(1);
 
 
   const handleScheduleSubmit = async () => {
@@ -130,6 +130,13 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
     const firstRunAt = new Date(`${scheduleDate}T${scheduleTime}:00Z`);
     if (firstRunAt <= new Date()) {
       setPreflightErrors(["First run date must be in the future"]);
+      return;
+    }
+
+    // After the firstRunAt validation, before setBatchProgress
+    if (scheduleRecurrence === "once" && scheduleMaxRuns !== 1) {
+      addToast("One-time schedules can only run once — max runs must be 1", "error");
+      setScheduleMaxRuns(1);
       return;
     }
 
@@ -606,7 +613,11 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                     <label className="text-[11px] text-bp-muted block mb-1">Recurrence</label>
                     <select
                       value={scheduleRecurrence}
-                      onChange={(e) => setScheduleRecurrence(e.target.value as any)}
+                      onChange={(e) => {
+                        const val = e.target.value as "once" | "daily" | "weekly" | "monthly";
+                        setScheduleRecurrence(val);
+                        if (val === "once") setScheduleMaxRuns(1); // ← force to 1
+                      }}
                       className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-body bg-white text-bp-dark"
                     >
                       <option value="once">Once (future-dated)</option>
@@ -616,13 +627,18 @@ export default function Send({ initialScheduleMode, onResetScheduleMode }: Props
                     </select>
                   </div>
                   <div>
-                    <label className="text-[11px] text-bp-muted block mb-1">Max runs (0 = unlimited)</label>
+                    <label className="text-[11px] text-bp-muted block mb-1">
+                      Max runs {scheduleRecurrence === "once" ? "(fixed at 1 for one-time)" : "(0 = unlimited)"}
+                    </label>
                     <input
                       type="number"
-                      min={0}
-                      value={scheduleMaxRuns}
+                      min={scheduleRecurrence === "once" ? 1 : 0}
+                      max={scheduleRecurrence === "once" ? 1 : undefined}
+                      value={scheduleRecurrence === "once" ? 1 : scheduleMaxRuns}
+                      disabled={scheduleRecurrence === "once"}
                       onChange={(e) => setScheduleMaxRuns(parseInt(e.target.value) || 0)}
-                      className="w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-mono bg-white text-bp-dark"
+                      className={`w-full h-[30px] px-2 border border-gray-300 rounded text-[12px] font-mono bg-white text-bp-dark ${scheduleRecurrence === "once" ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
                     />
                   </div>
                 </div>

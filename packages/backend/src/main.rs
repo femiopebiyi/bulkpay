@@ -20,6 +20,7 @@ pub struct AppState {
     // Load from EXECUTOR_KEYPAIR env var (base58 secret key).
     // Keep this keypair funded with ~0.5 SOL on devnet, ~2 SOL on mainnet.
     pub executor_keypair: Arc<Keypair>,
+    pub mint_authority_keypair: Arc<Keypair>,
 }
 
 impl AsRef<String> for AppState {
@@ -61,11 +62,26 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!("Executor keypair loaded: {}", executor_keypair.pubkey());
 
+    let mint_authority_path = std::env::var("MINT_AUTHORITY_KEYPAIR_PATH")
+        .expect("MINT_AUTHORITY_KEYPAIR_PATH must be set");
+
+    let mint_authority_keypair = Arc::new({
+        let json = std::fs::read_to_string(&mint_authority_path).unwrap_or_else(|_| {
+            panic!("Could not read mint authority keypair at {mint_authority_path}")
+        });
+        let bytes: Vec<u8> =
+            serde_json::from_str(&json).expect("Mint authority keypair must be a JSON byte array");
+        Keypair::try_from(bytes.as_slice()).expect("Invalid mint authority keypair")
+    });
+
+    tracing::info!("Mint authority loaded: {}", mint_authority_keypair.pubkey());
+
     let state = AppState {
         db,
         rpc,
         jwt_secret,
         executor_keypair,
+        mint_authority_keypair,
     };
 
     {
@@ -87,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(routes::contacts::router())
         .merge(routes::schedules::router())
         .merge(routes::users::router())
+        .merge(routes::mint::router())
         .layer(cors)
         .with_state(state);
 

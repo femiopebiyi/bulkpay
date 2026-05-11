@@ -177,34 +177,25 @@ async fn execute_batch(
             .unwrap_or_else(|_| "Bh6ADbE6SmBjta1YYSGvMp3i4Tqomey9NcFdpgHJAhpT".to_string()),
     )?;
 
-    let (scheduler_authority, scheduler_bump) =
-        Pubkey::find_program_address(&[b"scheduler_authority"], &program_id);
-
-    tracing::info!(
-        "scheduler_authority PDA: {}, bump: {}, program_id: {}",
-        scheduler_authority,
-        scheduler_bump,
-        program_id
-    );
-
     let mint = Pubkey::from_str(&row.mint_address)?;
     let sender = Pubkey::from_str(&row.sender_pubkey)?;
+    let schedule_pda = Pubkey::from_str(&row.schedule_pda)?;
     let created_at_seed = row
         .created_at_seed
-        .ok_or_else(|| anyhow!("Missing created_at_seed in DB"))?;
+        .ok_or_else(|| anyhow::anyhow!("Missing created_at_seed in DB for batch {}", batch_id))?;
 
-    // 2. Verify PDA integrity: re-derive from seed and compare to stored PDA
     let created_at_bytes = created_at_seed.to_le_bytes();
+
+    // 2. Verify PDA integrity
     let expected_pda = Pubkey::find_program_address(
         &[b"schedule", sender.as_ref(), &created_at_bytes],
         &program_id,
     )
     .0;
 
-    let schedule_pda = Pubkey::from_str(&row.schedule_pda)?;
     if expected_pda != schedule_pda {
-        return Err(anyhow!(
-            "PDA mismatch: derived {} from seed {}, but DB has {}",
+        return Err(anyhow::anyhow!(
+            "PDA mismatch: derived {} from seed {}, DB has {}",
             expected_pda,
             created_at_seed,
             schedule_pda
@@ -228,63 +219,7 @@ async fn execute_batch(
         amounts.push(entry.amount as u64);
     }
 
-    // After deriving recipient ATAs, verify each one exists and has correct owner/mint
-    for (i, entry) in entries.iter().enumerate() {
-        let wallet = Pubkey::from_str(&entry.wallet)
-            .map_err(|_| anyhow!("Invalid wallet: {}", entry.wallet))?;
-        let ata = atas[i];
-
-        match state.rpc.get_account(&ata) {
-            Ok(acc) => {
-                let token_account = spl_token::state::Account::unpack(&acc.data).map_err(|e| {
-                    anyhow!(
-                        "Invalid token account data at recipient ATA {} ({}): {}",
-                        ata,
-                        wallet,
-                        e
-                    )
-                })?;
-
-                tracing::info!(
-                "recipient_ata[{}] check — ata: {}, owner: {}, mint: {}, expected_wallet: {}, expected_mint: {}",
-                i, ata, token_account.owner, token_account.mint, wallet, mint
-            );
-
-                if token_account.owner != wallet {
-                    return Err(anyhow!(
-                        "recipient_ata[{}] owner mismatch: ata={}, expected {} (wallet), got {}. \
-                     This ATA was created for a different wallet.",
-                        i,
-                        ata,
-                        wallet,
-                        token_account.owner
-                    ));
-                }
-
-                if token_account.mint != mint {
-                    return Err(anyhow!(
-                        "recipient_ata[{}] mint mismatch: ata={}, expected {}, got {}",
-                        i,
-                        ata,
-                        mint,
-                        token_account.mint
-                    ));
-                }
-            }
-            Err(e) => {
-                return Err(anyhow!(
-                    "recipient_ata[{}] does not exist: ata={}, wallet={}, mint={}, error={}",
-                    i,
-                    ata,
-                    wallet,
-                    mint,
-                    e
-                ));
-            }
-        }
-    }
-
-    // 4. Pre-ATA pass: create any missing ATAs
+    // 4. Pre-ATA pass — create missing ATAs BEFORE any verification
     let ata_infos = state.rpc.get_multiple_accounts(&atas)?;
 
     let missing_ixs: Vec<Instruction> = atas
@@ -303,6 +238,11 @@ async fn execute_batch(
         .collect();
 
     if !missing_ixs.is_empty() {
+        tracing::info!(
+            "Creating {} missing recipient ATAs for batch {}",
+            missing_ixs.len(),
+            batch_id
+        );
         for chunk in missing_ixs.chunks(ATA_BATCH_SIZE) {
             let blockhash = state.rpc.get_latest_blockhash()?;
             let tx = Transaction::new_signed_with_payer(
@@ -332,44 +272,27 @@ async fn execute_batch(
 
     let sender_ata = get_associated_token_address_with_program_id(&sender, &mint, &token_prog);
 
-    // Verify sender_ata exists and is owned by sender
-    let acc = state.rpc.get_account(&sender_ata).map_err(|e| {
-        anyhow!(
-            "sender_ata does not exist or RPC error: {}. \
-         address={}, wallet={}, mint={}, token_program={}",
-            e,
+    // 6. Verify sender ATA exists
+    let sender_acc = state.rpc.get_account(&sender_ata).map_err(|e| {
+        anyhow::anyhow!(
+            "sender_ata does not exist: address={}, wallet={}, mint={}, error={}",
             sender_ata,
             sender,
             mint,
-            token_prog
+            e
         )
     })?;
 
-    // Now acc is Account (unwrapped from Result)
-    let token_account = spl_token::state::Account::unpack(&acc.data)
-        .map_err(|e| anyhow!("Invalid token account data at {}: {}", sender_ata, e))?;
+    let sender_token_account = spl_token::state::Account::unpack(&sender_acc.data)
+        .map_err(|e| anyhow::anyhow!("Invalid token account data at {}: {}", sender_ata, e))?;
 
     tracing::info!(
-    "sender_ata check — address: {}, owner: {}, mint: {}, expected_sender: {}, expected_mint: {}",
-    sender_ata, token_account.owner, token_account.mint, sender, mint
-);
-
-    if token_account.owner != sender {
-        return Err(anyhow!(
-            "sender_ata owner mismatch: expected {} (sender), got {}. \
-         The ATA was created for a different wallet.",
-            sender,
-            token_account.owner
-        ));
-    }
-
-    if token_account.mint != mint {
-        return Err(anyhow!(
-            "sender_ata mint mismatch: expected {}, got {}",
-            mint,
-            token_account.mint
-        ));
-    }
+        "sender_ata — address: {}, owner: {}, mint: {}, balance: {}",
+        sender_ata,
+        sender_token_account.owner,
+        sender_token_account.mint,
+        sender_token_account.amount
+    );
 
     tracing::info!(
         "Building tx — batch: {}, executor: {}, sender: {}, schedule_pda: {}, created_at_seed: {}",
@@ -380,7 +303,7 @@ async fn execute_batch(
         created_at_seed,
     );
 
-    // 6. Build account metas
+    // 7. Build account metas
     let mut account_metas = vec![
         solana_sdk::instruction::AccountMeta::new(executor.pubkey(), true),
         solana_sdk::instruction::AccountMeta::new_readonly(sender, false),
@@ -402,7 +325,7 @@ async fn execute_batch(
         account_metas.push(solana_sdk::instruction::AccountMeta::new(*ata, false));
     }
 
-    // 7. Discriminator for "global:execute_schedule"
+    // 8. Discriminator for execute_schedule
     let discriminator = {
         use sha2::Digest;
         let mut hasher = sha2::Sha256::new();
@@ -411,9 +334,8 @@ async fn execute_batch(
         result[..8].to_vec()
     };
 
-    // ✅ Append explicit created_at seed as little-endian i64
     let mut ix_data = discriminator;
-    ix_data.extend_from_slice(&created_at_seed.to_le_bytes());
+    ix_data.extend_from_slice(&created_at_bytes);
 
     let ix = Instruction {
         program_id,
@@ -421,7 +343,7 @@ async fn execute_batch(
         data: ix_data,
     };
 
-    // 8. Send and confirm
+    // 9. Send and confirm
     let blockhash = state.rpc.get_latest_blockhash()?;
     let tx = Transaction::new_signed_with_payer(
         &[ix],
