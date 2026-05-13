@@ -7,5 +7,9 @@ const nextConfig = {
         };
         return config;
     },
+
+    experimental: {
+        outputFileTracingRoot: require('path').join(__dirname, '../../'),
+    },
 };
 module.exports = nextConfig;
