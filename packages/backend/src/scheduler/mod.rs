@@ -46,7 +46,7 @@ async fn find_and_execute_due(state: &AppState) -> anyhow::Result<usize> {
          WHERE id IN (
              SELECT id FROM scheduled_batches
              WHERE status      = 'pending'
-               AND scheduled_at <= now()
+               AND scheduled_at <= now() - interval '60 seconds'
              ORDER BY scheduled_at ASC
              LIMIT 10
              FOR UPDATE SKIP LOCKED

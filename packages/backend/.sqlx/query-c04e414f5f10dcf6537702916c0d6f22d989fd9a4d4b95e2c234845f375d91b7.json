@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE scheduled_batches\n         SET status = 'running'\n         WHERE id IN (\n             SELECT id FROM scheduled_batches\n             WHERE status      = 'pending'\n               AND scheduled_at <= now()\n             ORDER BY scheduled_at ASC\n             LIMIT 10\n             FOR UPDATE SKIP LOCKED\n         )\n         RETURNING id, sender_pubkey, schedule_pda, mint_address,\n                   recipients, recurrence, runs_completed, max_runs, retry_count",
+  "query": "UPDATE scheduled_batches\n         SET status = 'running'\n         WHERE id IN (\n             SELECT id FROM scheduled_batches\n             WHERE status      = 'pending'\n               AND scheduled_at <= now() - interval '60 seconds'\n             ORDER BY scheduled_at ASC\n             LIMIT 10\n             FOR UPDATE SKIP LOCKED\n         )\n         RETURNING id, sender_pubkey, schedule_pda, mint_address,\n                   recipients, recurrence, runs_completed, max_runs, retry_count",
   "describe": {
     "columns": [
       {
@@ -64,5 +64,5 @@
       false
     ]
   },
-  "hash": "76d00105d091fa3f9cc7d4dbedcd2bb9a76c48520c6f4386af0fcc7bc1bfd6ff"
+  "hash": "c04e414f5f10dcf6537702916c0d6f22d989fd9a4d4b95e2c234845f375d91b7"
 }
