@@ -16,7 +16,7 @@ import {
 } from "@solana/web3.js";
 import { Program, BN } from "@coral-xyz/anchor";
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { BulkPay } from "../../../../shared/types/bulk_pay";
+import { BulkPay } from "@/shared/bulk_pay";
 import { connection, USDC_MINT } from "./solana";
 import { authHeaders } from "./auth";
 

@@ -14,8 +14,8 @@ import {
 } from "@/lib/transaction";
 import { Program } from "@coral-xyz/anchor";
 import { PublicKey, VersionedTransaction } from "@solana/web3.js";
-import { BulkPay } from "../../../../../shared/types/bulk_pay";
-import idl from "../../../../../shared/types/idl/bulk_pay.json";
+import { BulkPay } from "@/shared/bulk_pay";
+import idl from "@/shared/idl/bulk_pay.json";
 
 
 

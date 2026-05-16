@@ -15,7 +15,7 @@ import {
     getAccount,
 } from "@solana/spl-token";
 import { Program } from "@coral-xyz/anchor";
-import { BulkPay } from "../../../../shared/types/bulk_pay";
+import { BulkPay } from "@/shared/bulk_pay";
 
 // ─── Network config ───────────────────────────────────────────────────────────
 //
