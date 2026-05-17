@@ -38,15 +38,17 @@ select:focus {
     scrollbar-width: none;
 }
 
-/* Prevent iOS zoom on input focus */
-@media screen and (-webkit-min-device-pixel-ratio: 0) {
+@media (min-width: 640px) {
 
+    input,
     input[type="text"],
     input[type="number"],
     input[type="date"],
     input[type="time"],
+    input[type="email"],
+    input[type="password"],
     select,
     textarea {
-        font-size: 16px !important;
+        font-size: inherit !important;
     }
 }
