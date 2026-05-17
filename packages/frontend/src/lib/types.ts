@@ -97,4 +97,5 @@ export type Page =
   | "schedules"
   | "faucet"
   | "profile"
-  | "batch-detail";
+  | "batch-detail"
+  | "schedule-detail"; 

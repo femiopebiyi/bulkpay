@@ -21,7 +21,10 @@ function formatNextRun(scheduledAt: string, status: string): string {
   });
 }
 
-export default function Schedules({ onNewSchedule }: { onNewSchedule: () => void }) {
+export default function Schedules({ onNewSchedule, onOpenSchedule }: {
+  onNewSchedule: () => void;
+  onOpenSchedule: (s: ScheduleRecord) => void;
+}) {
   const { authenticated } = useWallet();
   const { addToast } = useToast();
   const [schedules, setSchedules] = useState<ScheduleRecord[]>([]);
@@ -106,7 +109,9 @@ export default function Schedules({ onNewSchedule }: { onNewSchedule: () => void
 
             return (
               <div key={s.id}
-                className={`flex flex-col sm:flex-row sm:items-center px-3 py-2.5 border-b border-gray-50 last:border-b-0 gap-2 sm:gap-0 ${isCancelled ? "opacity-45" : ""}`}>
+                onClick={() => !isCancelled && onOpenSchedule(s)}
+                className={`flex flex-col sm:flex-row sm:items-center px-3 py-2.5 border-b border-gray-50 last:border-b-0 gap-2 sm:gap-0
+        ${isCancelled ? "opacity-45" : "hover:bg-gray-50 cursor-pointer transition-colors"}`}>
                 <div className="sm:w-[20%] font-mono text-[11px] text-bp-muted capitalize">
                   {s.recurrence}
                 </div>

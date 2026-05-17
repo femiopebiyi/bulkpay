@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@/context/WalletContext";
-import { Page, BatchRecord } from "@/lib/types";
+import { Page, BatchRecord, ScheduleRecord } from "@/lib/types";
 import LoginScreen from "@/components/LoginScreen";
 import Navbar from "@/components/Navbar";
 import ToastContainer from "@/components/Toast";
@@ -13,6 +13,8 @@ import Schedules from "@/components/pages/Schedules";
 import Faucet from "@/components/pages/Faucet";
 import Profile from "@/components/pages/Profile";
 import BatchDetail from "@/components/pages/BatchDetail";
+import ScheduleDetail from "@/components/pages/ScheduleDetail";
+
 
 export default function Home() {
   const { connected } = useWallet();
@@ -20,6 +22,7 @@ export default function Home() {
   const [prevPage, setPrevPage] = useState<Page>("dashboard");
   const [selectedBatch, setSelectedBatch] = useState<BatchRecord | null>(null);
   const [scheduleMode, setScheduleMode] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleRecord | null>(null);
 
   if (!connected) return <LoginScreen />;
 
@@ -39,6 +42,12 @@ export default function Home() {
     navigate("send");
   };
 
+  const openSchedule = (schedule: ScheduleRecord) => {
+    setPrevPage(page);
+    setSelectedSchedule(schedule);
+    setPage("schedule-detail");
+  };
+
   const navPage = page === "batch-detail" || page === "profile" ? prevPage : page;
 
   return (
@@ -48,10 +57,21 @@ export default function Home() {
         {page === "dashboard" && <Dashboard onNavigate={navigate} onOpenBatch={openBatch} onNewSchedule={goToScheduleMode} />}
         {page === "send" && <Send initialScheduleMode={scheduleMode} onResetScheduleMode={() => setScheduleMode(false)} />}
         {page === "history" && <History onOpenBatch={openBatch} />}
-        {page === "schedules" && <Schedules onNewSchedule={goToScheduleMode} />}
+        {page === "schedules" && (
+          <Schedules
+            onNewSchedule={goToScheduleMode}
+            onOpenSchedule={openSchedule}
+          />
+        )}
         {page === "faucet" && <Faucet />}
         {page === "profile" && <Profile onBack={() => navigate(prevPage)} />}
         {page === "batch-detail" && selectedBatch && <BatchDetail batch={selectedBatch} onBack={() => setPage(prevPage)} />}
+        {page === "schedule-detail" && selectedSchedule && (
+          <ScheduleDetail
+            schedule={selectedSchedule}
+            onBack={() => setPage(prevPage)}
+          />
+        )}
       </main>
       <ToastContainer />
     </div>
